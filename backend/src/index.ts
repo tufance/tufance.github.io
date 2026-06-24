@@ -36,12 +36,14 @@ async function handlePrices(request: Request, env: Env): Promise<Response> {
     errors._rates = (e as Error).message || "upstream_error";
   }
 
-  const yahooResults = await Promise.allSettled(
-    yahooSymbols.map((sym) => fetchYahooQuote(sym).then((q) => [sym, q] as const))
-  );
-  const tefasResults = await Promise.allSettled(
-    tefasFunds.map((code) => fetchTefasFund(code).then((p) => [code, p] as const))
-  );
+  const [yahooResults, tefasResults] = await Promise.all([
+    Promise.allSettled(
+      yahooSymbols.map((sym) => fetchYahooQuote(sym).then((q) => [sym, q] as const))
+    ),
+    Promise.allSettled(
+      tefasFunds.map((code) => fetchTefasFund(code).then((p) => [code, p] as const))
+    ),
+  ]);
 
   const prices: Record<string, PriceEntry> = {};
   for (const r of yahooResults) {
