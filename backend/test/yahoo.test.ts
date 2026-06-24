@@ -44,4 +44,18 @@ describe("fetchYahooQuote", () => {
     );
     await expect(fetchYahooQuote("RATE.IS")).rejects.toThrow("yahoo_http_429");
   });
+
+  it("throws on unsupported currency", async () => {
+    server.use(
+      http.get("https://query1.finance.yahoo.com/v8/finance/chart/JPY.T", () =>
+        HttpResponse.json({
+          chart: {
+            result: [{ meta: { regularMarketPrice: 100, currency: "JPY" } }],
+            error: null,
+          },
+        })
+      )
+    );
+    await expect(fetchYahooQuote("JPY.T")).rejects.toThrow("yahoo_unsupported_currency_JPY");
+  });
 });

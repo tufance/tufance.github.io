@@ -13,6 +13,10 @@ export async function fetchYahooQuote(symbol: string): Promise<YahooQuote> {
   };
   if (!data.chart.result?.[0]) throw new Error("symbol_not_found");
   const meta = data.chart.result[0].meta;
+  const SUPPORTED: YahooQuote["currency"][] = ["TRY", "USD", "EUR", "GBP"];
+  if (!SUPPORTED.includes(meta.currency as YahooQuote["currency"])) {
+    throw new Error(`yahoo_unsupported_currency_${meta.currency}`);
+  }
   return {
     price: meta.regularMarketPrice,
     currency: meta.currency as YahooQuote["currency"],
