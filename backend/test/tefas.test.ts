@@ -4,13 +4,15 @@ import { server } from "./setup";
 import { fetchTefasFund } from "../src/tefas";
 
 describe("fetchTefasFund", () => {
-  it("returns latest FIYAT for a fund", async () => {
+  it("returns latest fiyat for a fund", async () => {
     server.use(
-      http.post("https://www.tefas.gov.tr/api/DB/BindHistoryInfo", () =>
+      http.post("https://www.tefas.gov.tr/api/funds/fonFiyatBilgiGetir", () =>
         HttpResponse.json({
-          data: [
-            { TARIH: "23.06.2026", FIYAT: 3.04 },
-            { TARIH: "24.06.2026", FIYAT: 3.05 },
+          errorCode: null,
+          errorMessage: null,
+          resultList: [
+            { tarih: "2026-06-23", fiyat: 3.04 },
+            { tarih: "2026-06-24", fiyat: 3.05 },
           ],
         })
       )
@@ -19,10 +21,10 @@ describe("fetchTefasFund", () => {
     expect(price).toBe(3.05);
   });
 
-  it("throws fund_not_found when data is empty", async () => {
+  it("throws fund_not_found when resultList is empty", async () => {
     server.use(
-      http.post("https://www.tefas.gov.tr/api/DB/BindHistoryInfo", () =>
-        HttpResponse.json({ data: [] })
+      http.post("https://www.tefas.gov.tr/api/funds/fonFiyatBilgiGetir", () =>
+        HttpResponse.json({ errorCode: null, errorMessage: null, resultList: [] })
       )
     );
     await expect(fetchTefasFund("XXX")).rejects.toThrow("fund_not_found");
