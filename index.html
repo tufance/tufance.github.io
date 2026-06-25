@@ -462,6 +462,9 @@ const store={mem:{},
   async get(k){try{if(window.storage){const r=await window.storage.get(k);return r?r.value:null;}}catch(e){}try{const v=localStorage.getItem(k);if(v!==null)return v;}catch(e){}return (k in this.mem)?this.mem[k]:null;},
   async set(k,v){try{if(window.storage){await window.storage.set(k,v);return;}}catch(e){}try{localStorage.setItem(k,v);return;}catch(e){}this.mem[k]=v;}};
 
+/* ===== api ===== */
+const PORTFOY_API_URL = "https://portfoy-api.tufance.workers.dev/prices";
+
 /* ===== model ===== */
 const TYPES={fon:{label:"Fonlar",icon:"📊",color:"#7C5CFF"},hisse:{label:"Hisseler",icon:"📈",color:"#34D399"},
   etf:{label:"ETF",icon:"🧺",color:"#3BA0FF"},doviz:{label:"Döviz",icon:"💵",color:"#FF7A1A"},
@@ -769,6 +772,44 @@ document.getElementById('asAnnual').onchange=function(){state.asAnnual=+this.val
 async function save(){await store.set('pf_holdings',JSON.stringify(HOLDINGS));await store.set('pf_rates',JSON.stringify(RATES));await store.set('pf_snaps',JSON.stringify(SNAPS));await store.set('pf_cash',JSON.stringify(CASH));await store.set('pf_sales',JSON.stringify(SALES));await store.set('pf_contrib',JSON.stringify(CONTRIB));await store.set('pf_savtarget',JSON.stringify(SAV_TARGET));await store.set('pf_goals',JSON.stringify(GOALS));await store.set('pf_miles',JSON.stringify(MILE_DATES));await store.set('pf_proj',JSON.stringify(PROJ));await store.set('pf_state',JSON.stringify(state));}
 async function load(){const h=await store.get('pf_holdings');if(h){HOLDINGS=JSON.parse(h);document.getElementById('sampleTag').style.display='none';}else HOLDINGS=seedHoldings();const r=await store.get('pf_rates');if(r)RATES=Object.assign(RATES,JSON.parse(r));const sn=await store.get('pf_snaps');SNAPS=sn?JSON.parse(sn):[];const ca=await store.get('pf_cash');CASH=ca?JSON.parse(ca):0;const sa=await store.get('pf_sales');SALES=sa?JSON.parse(sa):[];const co=await store.get('pf_contrib');CONTRIB=co?JSON.parse(co):seedContrib();const st=await store.get('pf_savtarget');if(st)SAV_TARGET=JSON.parse(st);const go=await store.get('pf_goals');GOALS=go?JSON.parse(go):seedGoals();const mi=await store.get('pf_miles');MILE_DATES=mi?JSON.parse(mi):{};const pj=await store.get('pf_proj');if(pj)PROJ=Object.assign(PROJ,JSON.parse(pj));const s=await store.get('pf_state');if(s)state=Object.assign(state,JSON.parse(s));}
 
+/* ===== auto-refresh ===== */
+function ___buildSymbolKey(h){
+  if (h.type === "fon") return h.code;
+  if ((h.type === "hisse" || h.type === "etf") && h.region === "yurtici") return h.code + ".IS";
+  return h.code;
+}
+
+async function autoRefreshPrices(){
+  const yahoo = [], tefas = [];
+  for (const h of HOLDINGS){
+    if (!h.code) continue;
+    if (h.type === "fon") tefas.push(h.code);
+    else yahoo.push(___buildSymbolKey(h));
+  }
+  const qs = new URLSearchParams();
+  if (yahoo.length) qs.set("yahoo", yahoo.join(","));
+  if (tefas.length) qs.set("tefas", tefas.join(","));
+  const url = `${PORTFOY_API_URL}?${qs.toString()}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("api_down");
+  const data = await res.json();
+
+  if (data.rates){
+    Object.assign(RATES, data.rates);
+  }
+  for (const h of HOLDINGS){
+    const k = ___buildSymbolKey(h);
+    const p = data.prices?.[k];
+    if (p) h.price = p.tryEquiv ?? p.price;
+  }
+  state.lastUpdate = data.updatedAt
+    ? new Date(data.updatedAt).toLocaleString('tr-TR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})
+    : state.lastUpdate;
+  await save();
+  renderTab();
+  return data;
+}
+
 /* ===== wire ===== */
 function closeModal(id){document.getElementById(id).classList.remove('open')}
 window.closeModal=closeModal;
@@ -779,7 +820,7 @@ document.getElementById('openGoal').onclick=()=>openGoal(null);
 document.getElementById('f_type').onchange=syncTypeUI;
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 
-(async function(){fillTypeSelect();await load();showTab(state.tab||'overview');})();
+(async function(){fillTypeSelect();await load();showTab(state.tab||'overview');autoRefreshPrices().catch((e)=>{console.warn("autoRefresh failed, falling back to manual:",e.message);});})();
 </script>
 </body>
 </html>
