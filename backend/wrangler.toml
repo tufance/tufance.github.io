@@ -15,5 +15,5 @@ migrations_dir = "migrations"
 
 [vars]
 ALLOWED_ORIGIN = "https://portfoy-api.tufance.workers.dev"
-CF_TEAM_NAME = ""
-CF_ACCESS_AUD = ""
+CF_TEAM_NAME = "financial-tracking-team"
+CF_ACCESS_AUD = "f959c5633c8da16742ea791dee4aaaf8ddfd2a479f2eb4d74d05e9dfa818bff0"
