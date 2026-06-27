@@ -461,7 +461,7 @@
   <h2>Nakit yönet</h2>
   <div class="mh">Nakit kasandaki (₺) tutarı değiştir.</div>
   <div class="field"><label>Mevcut bakiye</label><div class="num" id="cashCurrentBal" style="font-size:18px">₺0</div></div>
-  <div class="field"><label>Tutar (₺)</label><input id="cash_amt" type="number" step="any" placeholder="0"></div>
+  <div class="field"><label>Tutar (₺) <a href="#" id="cashFillAll" style="float:right;color:var(--accent);text-decoration:none;font-size:12px;font-weight:600">Tümü</a></label><input id="cash_amt" type="number" step="any" placeholder="0"></div>
   <div class="modal-actions">
     <button class="btn-ghost" onclick="closeModal('cashOverlay')">Vazgeç</button>
     <button class="btn-ghost" id="cashWithdrawBtn">− Çıkar</button>
@@ -954,6 +954,10 @@ function openCash(){
   document.getElementById('cashOverlay').classList.add('open');
 }
 document.getElementById('openCashBtn').onclick = openCash;
+document.getElementById('cashFillAll').onclick = (e)=>{
+  e.preventDefault();
+  document.getElementById('cash_amt').value = CASH;
+};
 document.getElementById('cashAddBtn').onclick = ()=>{
   const v = +document.getElementById('cash_amt').value;
   if (!(v>0)){ toast("Tutar > 0 olmalı"); return; }
