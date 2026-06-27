@@ -841,12 +841,23 @@ function ___buildSymbolKey(h){
   return h.code;
 }
 
+function ___rateForHolding(h){
+  // Döviz/altın/kripto fiyatları RATES'ten gelir; Yahoo'ya tek başına "USD" gönderilmez.
+  if (h.type === "doviz" && h.code === "USD") return RATES.usdtry;
+  if (h.type === "doviz" && h.code === "EUR") return RATES.eurtry;
+  if (h.type === "altin") return RATES.gramAltin;
+  if (h.type === "kripto" && h.code === "BTC") return RATES.btcTRY;
+  if (h.type === "kripto" && h.code === "ETH") return RATES.ethTRY;
+  return null;
+}
+
 async function autoRefreshPrices(){
   const yahoo = [], tefas = [];
   for (const h of HOLDINGS){
     if (!h.code) continue;
     if (h.type === "fon") tefas.push(h.code);
-    else yahoo.push(___buildSymbolKey(h));
+    else if (h.type === "hisse" || h.type === "etf") yahoo.push(___buildSymbolKey(h));
+    // doviz/altin/kripto: RATES'ten dolacak, sembol gönderme
   }
   const qs = new URLSearchParams();
   if (yahoo.length) qs.set("yahoo", yahoo.join(","));
@@ -860,6 +871,8 @@ async function autoRefreshPrices(){
     Object.assign(RATES, data.rates);
   }
   for (const h of HOLDINGS){
+    const fromRates = ___rateForHolding(h);
+    if (fromRates != null){ h.price = fromRates; continue; }
     const k = ___buildSymbolKey(h);
     const p = data.prices?.[k];
     if (p) h.price = p.tryEquiv ?? p.price;
