@@ -64,6 +64,14 @@ async function handlePrices(request: Request): Promise<Response> {
 async function handleGetData(request: Request, env: Env): Promise<Response> {
   const email = readUserEmail(request);
   if (!email) return new Response("unauthorized", { status: 401 });
+
+  // Post-login browser navigation lands here; bounce to / so user sees the pano.
+  const accept = request.headers.get("accept") ?? "";
+  if (accept.includes("text/html")) {
+    const origin = new URL(request.url).origin;
+    return Response.redirect(`${origin}/`, 302);
+  }
+
   const row = await getPortfolio(env.DB, email);
   const body: PortfolioResponse = {
     email,
@@ -87,13 +95,12 @@ async function handlePutData(request: Request, env: Env): Promise<Response> {
   return jsonResponse({ updatedAt });
 }
 
-function handleAuthLogin(request: Request, env: Env): Response {
-  if (!env.CF_TEAM_NAME || !env.CF_ACCESS_AUD) {
-    return new Response("access_not_configured", { status: 503 });
-  }
-  const hostname = new URL(request.url).hostname;
-  const target = `https://${env.CF_TEAM_NAME}.cloudflareaccess.com/cdn-cgi/access/login/${hostname}?kid=${env.CF_ACCESS_AUD}&redirect_url=%2F`;
-  return Response.redirect(target, 302);
+function handleAuthLogin(request: Request): Response {
+  // /data is Access-protected: hitting it triggers CF Access to generate a proper
+  // login URL with meta JWT + kid + redirect_url. Manual URL construction misses
+  // the meta param and CF bounces back without showing Google.
+  const origin = new URL(request.url).origin;
+  return Response.redirect(`${origin}/data`, 302);
 }
 
 function handleAuthLogout(request: Request): Response {
@@ -122,7 +129,7 @@ export default {
       return new Response("method_not_allowed", { status: 405 });
     }
 
-    if (path === "/auth/login") return handleAuthLogin(request, env);
+    if (path === "/auth/login") return handleAuthLogin(request);
     if (path === "/auth/logout") return handleAuthLogout(request);
 
     return env.ASSETS.fetch(request);
