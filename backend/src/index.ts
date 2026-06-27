@@ -87,11 +87,12 @@ async function handlePutData(request: Request, env: Env): Promise<Response> {
   return jsonResponse({ updatedAt });
 }
 
-function handleAuthLogin(env: Env): Response {
+function handleAuthLogin(request: Request, env: Env): Response {
   if (!env.CF_TEAM_NAME || !env.CF_ACCESS_AUD) {
     return new Response("access_not_configured", { status: 503 });
   }
-  const target = `https://${env.CF_TEAM_NAME}.cloudflareaccess.com/cdn-cgi/access/login/${env.CF_ACCESS_AUD}?redirect_url=/`;
+  const hostname = new URL(request.url).hostname;
+  const target = `https://${env.CF_TEAM_NAME}.cloudflareaccess.com/cdn-cgi/access/login/${hostname}?kid=${env.CF_ACCESS_AUD}&redirect_url=%2F`;
   return Response.redirect(target, 302);
 }
 
@@ -121,7 +122,7 @@ export default {
       return new Response("method_not_allowed", { status: 405 });
     }
 
-    if (path === "/auth/login") return handleAuthLogin(env);
+    if (path === "/auth/login") return handleAuthLogin(request, env);
     if (path === "/auth/logout") return handleAuthLogout(request);
 
     return env.ASSETS.fetch(request);
