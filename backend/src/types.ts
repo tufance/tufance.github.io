@@ -28,4 +28,20 @@ export interface YahooQuote {
 
 export interface Env {
   ALLOWED_ORIGIN: string;
+  CF_TEAM_NAME: string;
+  CF_ACCESS_AUD: string;
+  ASSETS: { fetch: (req: Request) => Promise<Response> };
+  DB: D1Database;
+}
+
+export interface PortfolioRow {
+  email: string;
+  data: string;
+  updated_at: string;
+}
+
+export interface PortfolioResponse {
+  email: string;
+  data: Record<string, unknown> | null;
+  updatedAt: string | null;
 }

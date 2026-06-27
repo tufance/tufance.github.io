@@ -3,5 +3,17 @@ main = "src/index.ts"
 compatibility_date = "2026-06-01"
 compatibility_flags = ["nodejs_compat"]
 
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "portfoy-db"
+database_id = "ec62c34f-a6ea-47d5-b5f5-e65aacc8298a"
+migrations_dir = "migrations"
+
 [vars]
-ALLOWED_ORIGIN = "https://tufance.github.io"
+ALLOWED_ORIGIN = "https://portfoy-api.tufance.workers.dev"
+CF_TEAM_NAME = ""
+CF_ACCESS_AUD = ""
