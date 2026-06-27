@@ -221,9 +221,40 @@
   footer{margin:34px 0 10px;font-size:11.5px;color:var(--faint);line-height:1.7;text-align:center}
   footer b{color:var(--muted);font-weight:600}
   .sample-tag{font-size:10px;color:var(--accent);border:1px solid rgba(255,122,26,.3);padding:2px 7px;border-radius:99px;vertical-align:middle;margin-left:8px}
+
+/* ===== login + user chip ===== */
+#login-screen{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:100}
+#login-screen[hidden]{display:none}
+.login-card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:36px 32px;max-width:380px;width:90%;text-align:center}
+.login-card .dot{width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,var(--accent),#ff9d52);display:inline-grid;place-items:center;font-family:"Space Grotesk";font-weight:700;color:#1a0f04;font-size:24px;margin-bottom:14px}
+.login-card h1{font-size:22px;margin:0 0 6px}
+.login-card .sub{color:var(--muted);font-size:13px;margin-bottom:24px}
+.btn-google{display:inline-flex;align-items:center;gap:10px;padding:12px 22px;background:#fff;color:#1f1f29;border-radius:12px;font-weight:600;font-size:14px;text-decoration:none;transition:.15s}
+.btn-google:hover{filter:brightness(0.96)}
+.btn-google svg{width:18px;height:18px}
+.login-card .hint{color:var(--faint);font-size:12px;margin-top:18px}
+.user-chip{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.user-chip a{color:var(--accent);text-decoration:none}
+.user-chip a:hover{text-decoration:underline}
+#app[hidden]{display:none}
 </style>
 </head>
 <body>
+
+<div id="login-screen" hidden>
+  <div class="login-card">
+    <div class="dot">₺</div>
+    <h1>Portföy Panosu</h1>
+    <div class="sub">Kişisel birikim & finansal hedef takibi</div>
+    <a class="btn-google" href="/auth/login">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#4285F4" d="M23 12.27c0-.81-.07-1.6-.21-2.36H12v4.46h6.18a5.3 5.3 0 0 1-2.29 3.48v2.89h3.71C21.74 18.8 23 15.78 23 12.27z"/><path fill="#34A853" d="M12 23c3.09 0 5.69-1.02 7.59-2.78l-3.71-2.89c-1.03.69-2.35 1.1-3.88 1.1-2.99 0-5.52-2.02-6.42-4.73H1.74v2.97C3.62 20.41 7.5 23 12 23z"/><path fill="#FBBC05" d="M5.58 13.7a6.91 6.91 0 0 1 0-4.41V6.32H1.74a11 11 0 0 0 0 9.36l3.84-2z"/><path fill="#EA4335" d="M12 5.45c1.68 0 3.18.58 4.36 1.71l3.27-3.27C17.68 1.99 15.08 1 12 1 7.5 1 3.62 3.59 1.74 7.32l3.84 2.97C6.48 7.47 9.01 5.45 12 5.45z"/></svg>
+      Google ile devam et
+    </a>
+    <div class="hint">Yetkili hesaplar erişebilir.</div>
+  </div>
+</div>
+
+<div id="app" hidden>
 
 <header>
   <div class="brand">
@@ -232,6 +263,7 @@
     <div class="sub">Birikim & finansal hedef takibi</div></div>
   </div>
   <div class="spacer"></div>
+  <div class="user-chip"><span id="userEmail">—</span> · <a href="/auth/logout">Çıkış</a></div>
   <div class="updated" id="updatedAt">—</div>
   <button class="btn-primary" id="openUpdate">↻ Güncelle</button>
 </header>
@@ -456,11 +488,10 @@
 <div class="toast" id="toast"></div>
 <footer><b>Kaynaklar:</b> Hisse/ETF/kripto → Yahoo Finance · Fonlar → TEFAS · Kur & altın → güncel piyasa<br>Veriler tarayıcında saklanır. Buradaki hiçbir şey yatırım tavsiyesi değildir.</footer>
 
+</div><!-- /#app -->
+
 <script>
-/* ===== storage ===== */
-const store={mem:{},
-  async get(k){try{if(window.storage){const r=await window.storage.get(k);return r?r.value:null;}}catch(e){}try{const v=localStorage.getItem(k);if(v!==null)return v;}catch(e){}return (k in this.mem)?this.mem[k]:null;},
-  async set(k,v){try{if(window.storage){await window.storage.set(k,v);return;}}catch(e){}try{localStorage.setItem(k,v);return;}catch(e){}this.mem[k]=v;}};
+/* ===== api ===== (store removed — cloud sync below) */
 
 /* ===== api ===== */
 const PORTFOY_API_URL = "https://portfoy-api.tufance.workers.dev/prices";
@@ -730,9 +761,78 @@ document.getElementById('asMonthly').onchange=function(){state.asMonthly=this.va
 document.getElementById('asAnnual').onchange=function(){state.asAnnual=+this.value||0;save();renderGoals();};
 ['pjValue','pjMonthly','pjAnnual','pjYears'].forEach(idd=>{document.getElementById(idd).onchange=function(){PROJ.value=+document.getElementById('pjValue').value;PROJ.monthly=+document.getElementById('pjMonthly').value;PROJ.annual=+document.getElementById('pjAnnual').value;PROJ.years=Math.max(1,Math.min(40,+document.getElementById('pjYears').value||10));save();renderProjection();};});
 
-/* ===== persist ===== */
-async function save(){await store.set('pf_holdings',JSON.stringify(HOLDINGS));await store.set('pf_rates',JSON.stringify(RATES));await store.set('pf_snaps',JSON.stringify(SNAPS));await store.set('pf_cash',JSON.stringify(CASH));await store.set('pf_sales',JSON.stringify(SALES));await store.set('pf_contrib',JSON.stringify(CONTRIB));await store.set('pf_savtarget',JSON.stringify(SAV_TARGET));await store.set('pf_goals',JSON.stringify(GOALS));await store.set('pf_miles',JSON.stringify(MILE_DATES));await store.set('pf_proj',JSON.stringify(PROJ));await store.set('pf_state',JSON.stringify(state));}
-async function load(){const h=await store.get('pf_holdings');HOLDINGS=h?JSON.parse(h):[];const r=await store.get('pf_rates');if(r)RATES=Object.assign(RATES,JSON.parse(r));const sn=await store.get('pf_snaps');SNAPS=sn?JSON.parse(sn):[];const ca=await store.get('pf_cash');CASH=ca?JSON.parse(ca):0;const sa=await store.get('pf_sales');SALES=sa?JSON.parse(sa):[];const co=await store.get('pf_contrib');CONTRIB=co?JSON.parse(co):[];const st=await store.get('pf_savtarget');if(st)SAV_TARGET=JSON.parse(st);const go=await store.get('pf_goals');GOALS=go?JSON.parse(go):[];const mi=await store.get('pf_miles');MILE_DATES=mi?JSON.parse(mi):{};const pj=await store.get('pf_proj');if(pj)PROJ=Object.assign(PROJ,JSON.parse(pj));const s=await store.get('pf_state');if(s)state=Object.assign(state,JSON.parse(s));}
+/* ===== cloud sync ===== */
+function dumpState(){
+  return {
+    holdings: HOLDINGS, cash: CASH, sales: SALES, contrib: CONTRIB,
+    goals: GOALS, snaps: SNAPS, savTarget: SAV_TARGET, mileDates: MILE_DATES,
+    proj: PROJ, state: state, schemaVersion: 1
+  };
+}
+
+function hydrate(data){
+  if (!data){
+    HOLDINGS=[]; CASH=0; SALES=[]; CONTRIB=[]; GOALS=[];
+    SNAPS=[]; SAV_TARGET={amount:1000,ccy:"USD"};
+    MILE_DATES={}; PROJ={value:null,monthly:null,annual:10,years:10};
+    return;
+  }
+  HOLDINGS = data.holdings ?? [];
+  CASH = data.cash ?? 0;
+  SALES = data.sales ?? [];
+  CONTRIB = data.contrib ?? [];
+  GOALS = data.goals ?? [];
+  SNAPS = data.snaps ?? [];
+  SAV_TARGET = data.savTarget ?? {amount:1000,ccy:"USD"};
+  MILE_DATES = data.mileDates ?? {};
+  PROJ = Object.assign({value:null,monthly:null,annual:10,years:10}, data.proj ?? {});
+  if (data.state) state = Object.assign(state, data.state);
+}
+
+let saveTimer = null;
+function scheduleSave(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveNow, 500);
+}
+async function saveNow(){
+  try{
+    const r = await fetch('/data', {
+      method:'PUT', credentials:'include',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({ data: dumpState() })
+    });
+    if (r.ok){
+      const { updatedAt } = await r.json();
+      state.lastSync = updatedAt;
+    }
+  }catch(e){ console.warn('save failed', e && e.message); }
+}
+
+// Backward-compat shim: existing UI code calls save(); route through scheduleSave().
+async function save(){ scheduleSave(); }
+
+function showLogin(){ document.getElementById('login-screen').hidden=false; document.getElementById('app').hidden=true; }
+function showApp(){ document.getElementById('login-screen').hidden=true; document.getElementById('app').hidden=false; }
+
+async function boot(){
+  try{
+    const r = await fetch('/data', { credentials:'include', redirect:'manual' });
+    if (r.type === 'opaqueredirect' || r.status === 401){
+      showLogin(); return;
+    }
+    if (!r.ok) throw new Error('boot_failed');
+    const { email, data, updatedAt } = await r.json();
+    document.getElementById('userEmail').textContent = email;
+    hydrate(data);
+    state.lastSync = updatedAt;
+    showApp();
+    if (typeof renderTab === 'function') renderTab();
+    autoRefreshPrices().catch(()=>{});
+  }catch(e){
+    console.error('boot error', e);
+    showLogin();
+  }
+}
 
 /* ===== auto-refresh ===== */
 function ___buildSymbolKey(h){
@@ -782,7 +882,8 @@ document.getElementById('openGoal').onclick=()=>openGoal(null);
 document.getElementById('f_type').onchange=syncTypeUI;
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 
-(async function(){fillTypeSelect();await load();showTab(state.tab||'overview');autoRefreshPrices().catch((e)=>{console.warn("autoRefresh failed, falling back to manual:",e.message);});})();
+fillTypeSelect();
+boot();
 </script>
 </body>
 </html>
