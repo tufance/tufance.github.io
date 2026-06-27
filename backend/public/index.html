@@ -313,7 +313,7 @@
   </section>
 
   <section class="groups" id="groups"></section>
-  <div class="addbar"><button class="btn-ghost" id="openAdd">+ Yatırım ekle</button></div>
+  <div class="addbar" style="display:flex;gap:10px"><button class="btn-ghost" id="openAdd">+ Yatırım ekle</button><button class="btn-ghost" id="openCashBtn">💰 Nakit yönet</button></div>
 </div>
 
 <!-- ============ SAVINGS ============ -->
@@ -427,6 +427,10 @@
 <!-- MODALS -->
 <div class="overlay" id="addOverlay"><div class="modal">
   <h2 id="addTitle">Yatırım ekle</h2>
+  <div class="ccy-switch" id="fundingSeg" style="margin-bottom:10px">
+    <button type="button" data-fund="new" class="active">+ Yeni para</button>
+    <button type="button" data-fund="cash">💰 Kasadan <small id="cashBalLabel"></small></button>
+  </div>
   <div class="mh">Güncel fiyat zorunlu değil — boş bırakırsan “Güncelle” dediğinde doldurulur.</div>
   <div class="row2">
     <div class="field"><label>Tür</label><select id="f_type"></select></div>
@@ -451,6 +455,27 @@
   <h2>Yatırımı sat</h2><div class="mh">Güncel fiyat üzerinden nakit TL'ye çevrilir ve portföye “Nakit” olarak eklenir.</div>
   <div class="sellbox" id="sellBox"></div>
   <div class="modal-actions"><button class="btn-ghost" onclick="closeModal('sellOverlay')">Vazgeç</button><button class="btn-primary" id="confirmSell">Sat ve nakde çevir</button></div>
+</div></div>
+
+<div class="overlay" id="cashOverlay"><div class="modal">
+  <h2>Nakit yönet</h2>
+  <div class="mh">Nakit kasandaki (₺) tutarı değiştir.</div>
+  <div class="field"><label>Mevcut bakiye</label><div class="num" id="cashCurrentBal" style="font-size:18px">₺0</div></div>
+  <div class="field"><label>Tutar (₺)</label><input id="cash_amt" type="number" step="any" placeholder="0"></div>
+  <div class="modal-actions">
+    <button class="btn-ghost" onclick="closeModal('cashOverlay')">Vazgeç</button>
+    <button class="btn-ghost" id="cashWithdrawBtn">− Çıkar</button>
+    <button class="btn-primary" id="cashAddBtn">+ Ekle</button>
+  </div>
+</div></div>
+
+<div class="overlay" id="cashConfirmOverlay"><div class="modal">
+  <h2>Yeterli nakit yok</h2>
+  <div class="mh" id="cashConfirmMsg"></div>
+  <div class="modal-actions">
+    <button class="btn-ghost" onclick="closeModal('cashConfirmOverlay')">Vazgeç</button>
+    <button class="btn-primary" id="cashConfirmContinue">Yeni yatırım olarak ekle</button>
+  </div>
 </div></div>
 
 <div class="overlay" id="updateOverlay"><div class="modal">
@@ -730,10 +755,29 @@ let toastT;function toast(m){const t=document.getElementById('toast');t.textCont
 let editingId=null;
 function fillTypeSelect(){document.getElementById('f_type').innerHTML=TYPE_ORDER.map(t=>`<option value="${t}">${TYPES[t].label}</option>`).join('')}
 function syncTypeUI(){const t=document.getElementById('f_type').value;document.getElementById('regionField').style.display=REGIONAL.includes(t)?'':'none';const tl={doviz:["Alış kuru (₺)","Güncel kur (₺) — opsiyonel"],altin:["Alış (₺/gr)","Güncel (₺/gr) — opsiyonel"]}[t]||["Birim maliyet (₺)","Güncel fiyat (₺) — opsiyonel"];document.getElementById('f_costlbl').textContent=tl[0];document.getElementById('f_pricelbl').textContent=tl[1];}
-function openAdd(){editingId=null;document.getElementById('addTitle').textContent="Yatırım ekle";['f_code','f_name','f_qty','f_cost','f_price','f_date'].forEach(x=>document.getElementById(x).value='');document.getElementById('f_type').value='hisse';document.getElementById('f_region').value='yurtici';syncTypeUI();document.getElementById('addOverlay').classList.add('open');}
-function openEdit(hid){const h=HOLDINGS.find(x=>x.id===hid);if(!h)return;editingId=hid;document.getElementById('addTitle').textContent="Yatırım düzenle";document.getElementById('f_type').value=h.type;document.getElementById('f_region').value=h.region||'yurtici';document.getElementById('f_code').value=h.code;document.getElementById('f_name').value=h.name;document.getElementById('f_qty').value=h.qty;document.getElementById('f_cost').value=h.unitCost;document.getElementById('f_price').value=isPending(h)?'':h.price;document.getElementById('f_date').value=h.buyDate;syncTypeUI();document.getElementById('addOverlay').classList.add('open');}
+function openAdd(){editingId=null;document.getElementById('addTitle').textContent="Yatırım ekle";['f_code','f_name','f_qty','f_cost','f_price','f_date'].forEach(x=>document.getElementById(x).value='');document.getElementById('f_type').value='hisse';document.getElementById('f_region').value='yurtici';syncTypeUI();fundingMode='new';document.getElementById('fundingSeg').style.display='';document.querySelectorAll('#fundingSeg button').forEach(b=>b.classList.toggle('active',b.dataset.fund==='new'));document.getElementById('cashBalLabel').textContent=`(${moneyTRY(CASH)})`;document.getElementById('addOverlay').classList.add('open');}
+function openEdit(hid){const h=HOLDINGS.find(x=>x.id===hid);if(!h)return;editingId=hid;document.getElementById('addTitle').textContent="Yatırım düzenle";document.getElementById('f_type').value=h.type;document.getElementById('f_region').value=h.region||'yurtici';document.getElementById('f_code').value=h.code;document.getElementById('f_name').value=h.name;document.getElementById('f_qty').value=h.qty;document.getElementById('f_cost').value=h.unitCost;document.getElementById('f_price').value=isPending(h)?'':h.price;document.getElementById('f_date').value=h.buyDate;syncTypeUI();document.getElementById('fundingSeg').style.display='none';document.getElementById('addOverlay').classList.add('open');}
 function gv(id){return document.getElementById(id).value.trim()}
-document.getElementById('saveAdd').onclick=()=>{const t=gv('f_type'),code=gv('f_code').toUpperCase(),name=gv('f_name')||code;const qty=+gv('f_qty'),unitCost=+gv('f_cost'),buyDate=gv('f_date')||new Date().toISOString().slice(0,10);const pr=gv('f_price');const price=pr===''?null:+pr;const region=REGIONAL.includes(t)?gv('f_region'):null;if(!code||!qty||!unitCost){alert("Kod, adet ve maliyet zorunlu.");return;}if(editingId){const h=HOLDINGS.find(x=>x.id===editingId);Object.assign(h,{type:t,region,code,name,qty,unitCost,price,buyDate});if(!h.bmAtCost)h.bmAtCost={...bmNow()};toast("Yatırım güncellendi");}else{HOLDINGS.push({id:id(),type:t,region,code,name,qty,unitCost,price,dayPct:0,buyDate,bmAtCost:{...bmNow()}});toast("Yatırım eklendi");}closeModal('addOverlay');save();renderTab();};
+function ___finalizeAdd(h, fromCash){
+  HOLDINGS.push(h);
+  if (fromCash) { CASH -= h.qty * h.unitCost; toast(`${moneyTRY(h.qty*h.unitCost)} kasadan kullanıldı`); }
+  else toast("Yatırım eklendi");
+  closeModal('addOverlay');
+  save(); renderTab();
+}
+let pendingHolding = null;
+document.getElementById('saveAdd').onclick=()=>{const t=gv('f_type'),code=gv('f_code').toUpperCase(),name=gv('f_name')||code;const qty=+gv('f_qty'),unitCost=+gv('f_cost'),buyDate=gv('f_date')||new Date().toISOString().slice(0,10);const pr=gv('f_price');const price=pr===''?null:+pr;const region=REGIONAL.includes(t)?gv('f_region'):null;if(!code||!qty||!unitCost){alert("Kod, adet ve maliyet zorunlu.");return;}if(editingId){const h=HOLDINGS.find(x=>x.id===editingId);Object.assign(h,{type:t,region,code,name,qty,unitCost,price,buyDate});if(!h.bmAtCost)h.bmAtCost={...bmNow()};closeModal('addOverlay');save();renderTab();toast("Yatırım güncellendi");return;}
+  const newH = {id:id(),type:t,region,code,name,qty,unitCost,price,dayPct:0,buyDate,bmAtCost:{...bmNow()}};
+  const totalCost = qty * unitCost;
+  if (fundingMode === 'cash'){
+    if (CASH >= totalCost){ ___finalizeAdd(newH, true); return; }
+    pendingHolding = newH;
+    document.getElementById('cashConfirmMsg').innerHTML = `Kasada <b>${moneyTRY(CASH)}</b> var ama <b>${moneyTRY(totalCost)}</b> gerekiyor. Yeni yatırım olarak (kasaya dokunmadan) ekleyelim mi?`;
+    document.getElementById('cashConfirmOverlay').classList.add('open');
+    return;
+  }
+  ___finalizeAdd(newH, false);
+};
 
 /* ===== sell ===== */
 let sellingId=null;
@@ -894,6 +938,45 @@ document.getElementById('openContrib').onclick=()=>openContrib(null);
 document.getElementById('openGoal').onclick=()=>openGoal(null);
 document.getElementById('f_type').onchange=syncTypeUI;
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+
+/* ===== cash + funding ===== */
+let fundingMode = 'new';
+document.querySelectorAll('#fundingSeg button').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('#fundingSeg button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    fundingMode = b.dataset.fund;
+  };
+});
+function openCash(){
+  document.getElementById('cashCurrentBal').textContent = moneyTRY(CASH);
+  document.getElementById('cash_amt').value = '';
+  document.getElementById('cashOverlay').classList.add('open');
+}
+document.getElementById('openCashBtn').onclick = openCash;
+document.getElementById('cashAddBtn').onclick = ()=>{
+  const v = +document.getElementById('cash_amt').value;
+  if (!(v>0)){ toast("Tutar > 0 olmalı"); return; }
+  CASH += v;
+  closeModal('cashOverlay');
+  save(); renderTab();
+  toast(`+${moneyTRY(v)} nakit eklendi`);
+};
+document.getElementById('cashWithdrawBtn').onclick = ()=>{
+  const v = +document.getElementById('cash_amt').value;
+  if (!(v>0)){ toast("Tutar > 0 olmalı"); return; }
+  if (v > CASH){ toast(`Kasada ${moneyTRY(CASH)} var, ${moneyTRY(v)} çekilemez`); return; }
+  CASH -= v;
+  closeModal('cashOverlay');
+  save(); renderTab();
+  toast(`−${moneyTRY(v)} nakit çıkarıldı`);
+};
+document.getElementById('cashConfirmContinue').onclick = ()=>{
+  if (!pendingHolding) return;
+  ___finalizeAdd(pendingHolding, false);
+  pendingHolding = null;
+  closeModal('cashConfirmOverlay');
+};
 
 fillTypeSelect();
 boot();
