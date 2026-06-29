@@ -589,6 +589,23 @@
   </div>
 </div></div>
 
+<div class="overlay" id="positionTxOverlay"><div class="modal" style="max-width:720px">
+  <h2 id="positionTxTitle">İşlem geçmişi</h2>
+  <div class="mh" id="positionTxSummary"></div>
+  <div class="tbl-wrap" style="max-height:55vh;overflow:auto">
+    <table style="width:100%">
+      <thead>
+        <tr><th>Tarih</th><th>Yön</th><th class="num">Adet</th><th class="num">Fiyat</th><th class="num">Toplam</th><th></th></tr>
+      </thead>
+      <tbody id="positionTxTbody"></tbody>
+    </table>
+  </div>
+  <div class="modal-actions">
+    <button class="btn-ghost" onclick="closeModal('positionTxOverlay')">Kapat</button>
+    <button class="btn-primary" id="positionTxAddNew">+ İşlem ekle</button>
+  </div>
+</div></div>
+
 <div class="overlay" id="updateOverlay"><div class="modal">
   <h2>Fiyatları güncelle</h2><div class="mh">Güncel fiyatları gir, hesaplamalar yenilensin ve günün anlık görüntüsü geçmişe kaydedilsin.</div>
   <div class="note">💡 Fiyatları elle aramak istemezsen sohbete <b>"güncelle"</b> yaz — Yahoo Finance ve TEFAS'tan çekip buraya yazdırayım.</div>
@@ -836,6 +853,51 @@ function renderTransactions(){
   tbody.querySelectorAll('[data-tx-del]').forEach(b=> b.onclick = ()=> openTxDelete(b.dataset.txDel));
 }
 
+function openPositionTx(posId){
+  const h = HOLDINGS.find(x => x.id === posId);
+  if (!h) return;
+  const txs = TRANSACTIONS
+    .filter(t => t.type===h.type && t.code===h.code && (t.region||null)===(h.region||null))
+    .sort((a,b)=> a.date<b.date?1:a.date>b.date?-1:0);
+  document.getElementById('positionTxTitle').textContent = `${h.code} · ${h.name} — işlem geçmişi`;
+  const totalBuy = txs.filter(t=>t.side==='buy').reduce((s,t)=>s+t.qty*t.price,0);
+  const totalSell = txs.filter(t=>t.side==='sell').reduce((s,t)=>s+t.qty*t.price,0);
+  document.getElementById('positionTxSummary').innerHTML =
+    `Mevcut <b>${nf(h.qty,h.qty<10?4:0)}</b> adet · birim maliyet <b>${nf(h.unitCost,h.unitCost<100?2:0)}₺</b> · ${txs.length} işlem · toplam alım ${moneyTRY(totalBuy)} · toplam satış ${moneyTRY(totalSell)}`;
+  document.getElementById('positionTxTbody').innerHTML = txs.map(tx => {
+    const sideBadge = tx.side==='buy'
+      ? '<span class="pendtag" style="background:rgba(52,211,153,.14);color:var(--up);border:none">↑ Alış</span>'
+      : '<span class="pendtag" style="background:rgba(248,113,113,.14);color:var(--down);border:none">↓ Satış</span>';
+    return `<tr>
+      <td>${tx.date}</td>
+      <td>${sideBadge}</td>
+      <td class="num">${nf(tx.qty,tx.qty<10?4:0)}</td>
+      <td class="num">${nf(tx.price,tx.price<100?2:0)}</td>
+      <td class="num">${moneyTRY(tx.qty*tx.price)}</td>
+      <td class="actions-td"><button class="rowbtn" data-postx-edit="${tx.id}">Düzenle</button> <button class="rowbtn sell" data-postx-del="${tx.id}">Sil</button></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--faint);padding:18px">Bu varlık için kayıtlı işlem yok.</td></tr>';
+  document.querySelectorAll('[data-postx-edit]').forEach(b => b.onclick = ()=>{
+    closeModal('positionTxOverlay');
+    openTxEdit(b.dataset.postxEdit);
+  });
+  document.querySelectorAll('[data-postx-del]').forEach(b => b.onclick = ()=>{
+    closeModal('positionTxOverlay');
+    openTxDelete(b.dataset.postxDel);
+  });
+  // pre-fill the "+ İşlem ekle" button to pop addOverlay scoped to this asset
+  document.getElementById('positionTxAddNew').onclick = ()=>{
+    closeModal('positionTxOverlay');
+    openAdd();
+    document.getElementById('f_type').value = h.type;
+    if (h.region) document.getElementById('f_region').value = h.region;
+    document.getElementById('f_code').value = h.code;
+    document.getElementById('f_name').value = h.name;
+    syncTypeUI();
+  };
+  document.getElementById('positionTxOverlay').classList.add('open');
+}
+
 function openTxEdit(tid){
   const tx = TRANSACTIONS.find(t => t.id === tid);
   if (!tx) return;
@@ -985,7 +1047,7 @@ function renderPerf(){const tg=document.getElementById('bmToggle');const opts=[[
 function renderBenchmark(){const ci=currentIndices();if(!ci){document.getElementById('bmRows').innerHTML='<div class="muted" style="font-size:12px">Yatırım ekleyince dolacak.</div>';return;}const rows=[["Senin portföyün",ci.port-100,holdingsValTRY(),"var(--accent)"],["Gram Altın",ci.gold-100,altValueTRY('gold'),"#E8B84B"],["Dolar",ci.usd-100,altValueTRY('usd'),"#FF7A1A"],["BIST 100",ci.bist-100,altValueTRY('bist'),"#3BA0FF"]];const max=Math.max(...rows.map(r=>Math.abs(r[1])),1);document.getElementById('bmRows').innerHTML=rows.map(([n,v,val,c])=>{const half=Math.abs(v)/max*50;const fill=v>=0?`left:50%;width:${half}%;background:${c}`:`right:50%;width:${half}%;background:${c}`;return `<div class="bm-row"><div class="nm"><span class="swatch" style="background:${c}"></span>${n}</div><div class="bar-track"><div class="bar-mid"></div><div class="bar-fill" style="${fill}"></div></div><div class="delta ${cls(v)}">${pct(v)}<small>${moneyTRY(val)}</small></div></div>`;}).join('');}
 function regionLabel(r){return r==='yurtdisi'?'Yurt Dışı':'Yurt İçi'}
 function buildGroups(){const G=[];TYPE_ORDER.forEach(t=>{if(REGIONAL.includes(t)){['yurtici','yurtdisi'].forEach(r=>{const items=HOLDINGS.filter(h=>h.type===t&&(h.region||'yurtici')===r);if(items.length)G.push({key:t+'|'+r,type:t,region:r,items});});}else{const items=HOLDINGS.filter(h=>h.type===t);if(items.length)G.push({key:t,type:t,region:null,items});}});return G;}
-function renderGroups(){const g=document.getElementById('groups');g.innerHTML='';buildGroups().forEach(grp=>{const T=TYPES[grp.type];const gv=grp.items.reduce((s,h)=>s+valTRY(h),0),gc=grp.items.reduce((s,h)=>s+costTRY(h),0);const gp=gc?(gv-gc)/gc*100:0;const rows=grp.items.map(h=>{const pend=isPending(h);const v=valTRY(h),c=costTRY(h),pnl=v-c,pp=c?pnl/c*100:0;const priceCell=pend?`<span class="pendtag">fiyat bekleniyor</span>`:`<span class="num">${nf(h.price,h.price<100?2:0)}</span>`;const dayCell=pend?`<span class="muted">—</span>`:`<span class="num ${cls(h.dayPct)}">${pct(h.dayPct||0)}</span>`;const pnlCell=pend?`<span class="muted">—</span>`:`<span class="num ${pnl>0?'cellpos':pnl<0?'cellneg':''}">${moneyTRY(pnl)}</span>`;const ppCell=pend?`<span class="muted">—</span>`:`<span class="num ${pp>0?'cellpos':pp<0?'cellneg':''}">${pct(pp)}</span>`;return `<tr><td><div class="asset"><span class="code">${h.code}</span><span class="nm">${h.name}</span></div></td><td class="num">${nf(h.qty,h.qty<10?4:0)}</td><td class="num">${nf(h.unitCost,h.unitCost<100?2:0)}</td><td>${priceCell}</td><td>${dayCell}</td><td class="num">${moneyTRY(v)}</td><td>${pnlCell}</td><td>${ppCell}</td><td class="actions-td">${(h.txCount ?? 1) === 1 ? `<button class="rowbtn" data-edit="${h.id}">Düzenle</button>` : ''}<button class="rowbtn sell" data-sell="${h.id}">Sat</button></td></tr>`;}).join('');g.insertAdjacentHTML('beforeend',`<div class="card group" data-k="${grp.key}"><div class="ghead"><div style="width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:13px;background:${T.color}22;color:${T.color}">${T.icon}</div><span class="gname">${T.label}${grp.region?' · '+regionLabel(grp.region):''}</span><span class="cnt">${grp.items.length}</span><div class="gval"><div class="num">${moneyTRY(gv)}</div><div class="gpnl num ${cls(gp)}">${pct(gp)}</div></div><span class="chev">▾</span></div><div class="tbl-wrap"><table><thead><tr><th>Varlık</th><th>Adet</th><th>Maliyet</th><th>Fiyat</th><th>Gün</th><th>Değer</th><th>K/Z</th><th>K/Z %</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`);});if(CASH>0||SALES.length){const ledger=SALES.slice().reverse().map(s=>`<div class="lrow"><span>${s.date} · ${s.code} (${nf(s.qty,s.qty<10?4:0)})</span><span class="num">+${moneyTRY(s.proceeds)} <span class="${cls(s.pnl)}">(${moneyTRY(s.pnl)})</span></span></div>`).join('');g.insertAdjacentHTML('beforeend',`<div class="card group" data-k="cash"><div class="ghead"><div style="width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:13px;background:#5A5A6E22;color:#9b9bae">💰</div><span class="gname">Nakit (TL) <span class="muted" style="font-size:11px;font-weight:500">· ${state.costMethod === 'wavg' ? 'Ağırlıklı Ortalama' : 'FIFO'} ile hesaplandı</span></span><span class="cnt">${SALES.length} satış</span><div class="gval"><div class="num cashbal">${moneyTRY(CASH)}</div></div><span class="chev">▾</span></div><div class="tbl-wrap"><div class="ledger">${ledger||'<div style="padding:8px 0">Henüz satış yok.</div>'}</div></div></div>`);}g.querySelectorAll('.ghead').forEach(h=>h.onclick=e=>{if(e.target.closest('.rowbtn'))return;h.parentElement.classList.toggle('collapsed')});g.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEdit(b.dataset.edit));g.querySelectorAll('[data-sell]').forEach(b=>b.onclick=()=>openSell(b.dataset.sell));}
+function renderGroups(){const g=document.getElementById('groups');g.innerHTML='';buildGroups().forEach(grp=>{const T=TYPES[grp.type];const gv=grp.items.reduce((s,h)=>s+valTRY(h),0),gc=grp.items.reduce((s,h)=>s+costTRY(h),0);const gp=gc?(gv-gc)/gc*100:0;const rows=grp.items.map(h=>{const pend=isPending(h);const v=valTRY(h),c=costTRY(h),pnl=v-c,pp=c?pnl/c*100:0;const priceCell=pend?`<span class="pendtag">fiyat bekleniyor</span>`:`<span class="num">${nf(h.price,h.price<100?2:0)}</span>`;const dayCell=pend?`<span class="muted">—</span>`:`<span class="num ${cls(h.dayPct)}">${pct(h.dayPct||0)}</span>`;const pnlCell=pend?`<span class="muted">—</span>`:`<span class="num ${pnl>0?'cellpos':pnl<0?'cellneg':''}">${moneyTRY(pnl)}</span>`;const ppCell=pend?`<span class="muted">—</span>`:`<span class="num ${pp>0?'cellpos':pp<0?'cellneg':''}">${pct(pp)}</span>`;return `<tr data-pos="${h.id}" style="cursor:pointer"><td><div class="asset"><span class="code">${h.code}</span><span class="nm">${h.name}</span></div></td><td class="num">${nf(h.qty,h.qty<10?4:0)}</td><td class="num">${nf(h.unitCost,h.unitCost<100?2:0)}</td><td>${priceCell}</td><td>${dayCell}</td><td class="num">${moneyTRY(v)}</td><td>${pnlCell}</td><td>${ppCell}</td><td class="actions-td"><button class="rowbtn" data-edit="${h.id}">Düzenle</button><button class="rowbtn sell" data-sell="${h.id}">Sat</button></td></tr>`;}).join('');g.insertAdjacentHTML('beforeend',`<div class="card group" data-k="${grp.key}"><div class="ghead"><div style="width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:13px;background:${T.color}22;color:${T.color}">${T.icon}</div><span class="gname">${T.label}${grp.region?' · '+regionLabel(grp.region):''}</span><span class="cnt">${grp.items.length}</span><div class="gval"><div class="num">${moneyTRY(gv)}</div><div class="gpnl num ${cls(gp)}">${pct(gp)}</div></div><span class="chev">▾</span></div><div class="tbl-wrap"><table><thead><tr><th>Varlık</th><th>Adet</th><th>Maliyet</th><th>Fiyat</th><th>Gün</th><th>Değer</th><th>K/Z</th><th>K/Z %</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`);});if(CASH>0||SALES.length){const ledger=SALES.slice().reverse().map(s=>`<div class="lrow"><span>${s.date} · ${s.code} (${nf(s.qty,s.qty<10?4:0)})</span><span class="num">+${moneyTRY(s.proceeds)} <span class="${cls(s.pnl)}">(${moneyTRY(s.pnl)})</span></span></div>`).join('');g.insertAdjacentHTML('beforeend',`<div class="card group" data-k="cash"><div class="ghead"><div style="width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:13px;background:#5A5A6E22;color:#9b9bae">💰</div><span class="gname">Nakit (TL) <span class="muted" style="font-size:11px;font-weight:500">· ${state.costMethod === 'wavg' ? 'Ağırlıklı Ortalama' : 'FIFO'} ile hesaplandı</span></span><span class="cnt">${SALES.length} satış</span><div class="gval"><div class="num cashbal">${moneyTRY(CASH)}</div></div><span class="chev">▾</span></div><div class="tbl-wrap"><div class="ledger">${ledger||'<div style="padding:8px 0">Henüz satış yok.</div>'}</div></div></div>`);}g.querySelectorAll('.ghead').forEach(h=>h.onclick=e=>{if(e.target.closest('.rowbtn'))return;h.parentElement.classList.toggle('collapsed')});g.querySelectorAll('[data-edit]').forEach(b=>b.onclick=(e)=>{e.stopPropagation();const h=HOLDINGS.find(x=>x.id===b.dataset.edit);if(!h)return;if((h.txCount??1)===1)openEdit(b.dataset.edit);else openPositionTx(b.dataset.edit);});g.querySelectorAll('[data-sell]').forEach(b=>b.onclick=(e)=>{e.stopPropagation();openSell(b.dataset.sell);});g.querySelectorAll('tr[data-pos]').forEach(tr=>tr.onclick=(e)=>{if(e.target.closest('.rowbtn'))return;openPositionTx(tr.dataset.pos);});}
 function renderUpdated(){document.getElementById('updatedAt').innerHTML=state.lastUpdate?`Son güncelleme<br><b style="color:var(--text)">${state.lastUpdate}</b>`:`Son güncelleme<br><span class="muted">henüz yok</span>`;}
 function renderOverview(){renderCcy();renderHero();renderReturns();renderAlloc();renderPerf();renderBenchmark();renderGroups();renderUpdated();}
 
