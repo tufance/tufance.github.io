@@ -277,6 +277,7 @@
 <nav class="tabs" id="tabs">
   <button data-tab="overview" class="active">Genel Bakış</button>
   <button data-tab="transactions">İşlemler</button>
+  <button data-tab="history">Geçmiş</button>
   <button data-tab="savings">Tasarruf</button>
   <button data-tab="goals">Hedefler</button>
   <button data-tab="projection">Projeksiyon</button>
@@ -358,6 +359,30 @@
 </div>
 
 <!-- ============ SAVINGS ============ -->
+<div data-section="history" style="display:none">
+  <div class="sec-head" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+    <h3 style="margin:0">Günlük Geçmiş</h3>
+    <span class="muted" style="font-size:12px">Her gün sonu portföy değeri + dışarıdan giren/çıkan nakit akışı. Günlük % nakit akışından arındırılmıştır.</span>
+  </div>
+  <div class="card" style="padding:0">
+    <div class="tbl-wrap">
+      <table id="historyTable" style="width:100%">
+        <thead>
+          <tr>
+            <th>Tarih</th>
+            <th class="num">Değer</th>
+            <th class="num">Nakit Akışı</th>
+            <th class="num">Net Yatırım</th>
+            <th class="num">Günlük %</th>
+          </tr>
+        </thead>
+        <tbody id="historyTbody"></tbody>
+      </table>
+    </div>
+    <div id="historyEmptyState" style="padding:24px;text-align:center;color:var(--muted);font-size:13px;display:none">Henüz geçmiş kaydı yok. Bir nakit girişi yap veya yeni para ile yatırım ekle.</div>
+  </div>
+</div>
+
 <div data-section="savings" style="display:none">
   <div class="sec-head">
     <div><h2>Aylık Tasarruf</h2><div class="sub">Kendi katkın ile piyasa getirisini ayır, disiplini ölç</div></div>
@@ -594,6 +619,7 @@ const GCCY=["USD","TRY","EUR"]; // tasarruf/hedef/projeksiyon para birimleri
 
 let HOLDINGS=[],SNAPS=[],CASH=0,SALES=[];
 let TRANSACTIONS=[];
+let DAILY_HISTORY=[]; // {date:"YYYY-MM-DD", value, cashFlow, netInvested}
 let CONTRIB=[];           // {id,ym,amount,ccy,note}
 let SAV_TARGET={amount:1000,ccy:"USD"};
 let GOALS=[];             // {id,name,amount,ccy,date}
@@ -1038,7 +1064,7 @@ function renderProjection(){
 
 /* ===== tabs ===== */
 function showTab(t){state.tab=t;document.querySelectorAll('[data-section]').forEach(s=>s.style.display=s.dataset.section===t?'':'none');document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));renderTab();save();}
-function renderTab(){if(state.tab==='overview')renderOverview();else if(state.tab==='transactions')renderTransactions();else if(state.tab==='savings')renderSavings();else if(state.tab==='goals')renderGoals();else renderProjection();}
+function renderTab(){if(state.tab==='overview')renderOverview();else if(state.tab==='transactions')renderTransactions();else if(state.tab==='history')renderHistory();else if(state.tab==='savings')renderSavings();else if(state.tab==='goals')renderGoals();else renderProjection();}
 
 /* ===== toast ===== */
 let toastT;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2200);}
@@ -1052,12 +1078,72 @@ function openEdit(hid){const h=HOLDINGS.find(x=>x.id===hid);if(!h)return;editing
 function gv(id){return document.getElementById(id).value.trim()}
 function ___finalizeBuy(tx, fromCash) {
   TRANSACTIONS.push(tx);
-  if (fromCash) { CASH -= tx.qty * tx.price; toast(`${moneyTRY(tx.qty*tx.price)} kasadan kullanıldı`); }
-  else toast("Yatırım eklendi");
+  const totalCost = tx.qty * tx.price;
+  if (fromCash) { CASH -= totalCost; toast(`${moneyTRY(totalCost)} kasadan kullanıldı`); }
+  else { ___bumpCashFlow(totalCost); toast("Yatırım eklendi"); }
   recomputeFromTransactions();
+  ___snapshotTodayValue();
   closeModal('addOverlay');
   save();
   renderTab();
+}
+
+/* ===== Daily history (M3) ===== */
+function ___todayISO(){ return new Date().toISOString().slice(0,10); }
+function ___formatDateTR(iso){
+  const [y,m,d] = iso.split('-');
+  return `${d}.${m}.${y}`;
+}
+function ___getOrCreateTodayEntry(){
+  const today = ___todayISO();
+  let entry = DAILY_HISTORY.find(e => e.date === today);
+  if (!entry) {
+    const sorted = DAILY_HISTORY.slice().sort((a,b)=> a.date<b.date?-1:1);
+    const lastInvested = sorted.length ? sorted[sorted.length-1].netInvested : 0;
+    entry = { date: today, value: 0, cashFlow: 0, netInvested: lastInvested };
+    DAILY_HISTORY.push(entry);
+  }
+  return entry;
+}
+function ___bumpCashFlow(delta){
+  const e = ___getOrCreateTodayEntry();
+  e.cashFlow += delta;
+  e.netInvested += delta;
+}
+function ___snapshotTodayValue(){
+  const e = ___getOrCreateTodayEntry();
+  e.value = totalValTRY();
+}
+
+function renderHistory(){
+  const tbody = document.getElementById('historyTbody');
+  const empty = document.getElementById('historyEmptyState');
+  if (!DAILY_HISTORY.length){
+    tbody.innerHTML = '';
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+  // newest first
+  const sortedDesc = DAILY_HISTORY.slice().sort((a,b)=> a.date<b.date?1:a.date>b.date?-1:0);
+  tbody.innerHTML = sortedDesc.map((e, i) => {
+    const prev = sortedDesc[i+1];   // older row
+    let dailyRet = null;
+    if (prev && prev.value > 0){
+      dailyRet = ((e.value - e.cashFlow) / prev.value - 1) * 100;
+    }
+    const pctStr = dailyRet === null ? '<span class="muted">—</span>'
+                 : `<span class="${cls(dailyRet)}">${pct(dailyRet)}</span>`;
+    const cfStr = Math.abs(e.cashFlow) < 0.005 ? '<span class="muted">—</span>'
+                 : `<span class="${e.cashFlow>0?'up':'down'}">${e.cashFlow>0?'+':''}${moneyTRY(e.cashFlow)}</span>`;
+    return `<tr>
+      <td>${___formatDateTR(e.date)}</td>
+      <td class="num">${moneyTRY(e.value)}</td>
+      <td class="num">${cfStr}</td>
+      <td class="num">${moneyTRY(e.netInvested)}</td>
+      <td class="num">${pctStr}</td>
+    </tr>`;
+  }).join('');
 }
 let pendingTx = null;
 document.getElementById('saveAdd').onclick = ()=>{
@@ -1198,20 +1284,22 @@ function dumpState(){
     costMethod: state.costMethod || "fifo",
     holdings: HOLDINGS,
     sales: SALES,
+    dailyHistory: DAILY_HISTORY,
     cash: CASH, contrib: CONTRIB, goals: GOALS, snaps: SNAPS,
     savTarget: SAV_TARGET, mileDates: MILE_DATES,
-    proj: PROJ, state: state, schemaVersion: 2
+    proj: PROJ, state: state, schemaVersion: 3
   };
 }
 
 function hydrate(data){
   if (!data){
-    TRANSACTIONS=[]; HOLDINGS=[]; SALES=[];
+    TRANSACTIONS=[]; HOLDINGS=[]; SALES=[]; DAILY_HISTORY=[];
     CASH=0; CONTRIB=[]; GOALS=[];
     SNAPS=[]; SAV_TARGET={amount:1000,ccy:"USD"};
     MILE_DATES={}; PROJ={value:null,monthly:null,annual:10,years:10};
     return;
   }
+  DAILY_HISTORY = Array.isArray(data.dailyHistory) ? data.dailyHistory : [];
   // Source of truth: transactions
   if (Array.isArray(data.transactions)) {
     TRANSACTIONS = data.transactions;
@@ -1282,9 +1370,10 @@ async function boot(){
     state.lastSync = updatedAt;
     const __costSel2 = document.getElementById('costMethodSel');
     if (__costSel2) __costSel2.value = state.costMethod || "fifo";
+    ___snapshotTodayValue();
     showApp();
     if (typeof renderTab === 'function') renderTab();
-    autoRefreshPrices().catch(()=>{});
+    autoRefreshPrices().then(()=>{ ___snapshotTodayValue(); save(); }).catch(()=>{});
   }catch(e){
     console.error('boot error', e);
     showLogin();
@@ -1375,6 +1464,8 @@ document.getElementById('cashAddBtn').onclick = ()=>{
   const v = +document.getElementById('cash_amt').value;
   if (!(v>0)){ toast("Tutar > 0 olmalı"); return; }
   CASH += v;
+  ___bumpCashFlow(v);
+  ___snapshotTodayValue();
   closeModal('cashOverlay');
   save(); renderTab();
   toast(`+${moneyTRY(v)} nakit eklendi`);
@@ -1384,6 +1475,8 @@ document.getElementById('cashWithdrawBtn').onclick = ()=>{
   if (!(v>0)){ toast("Tutar > 0 olmalı"); return; }
   if (v > CASH){ toast(`Kasada ${moneyTRY(CASH)} var, ${moneyTRY(v)} çekilemez`); return; }
   CASH -= v;
+  ___bumpCashFlow(-v);
+  ___snapshotTodayValue();
   closeModal('cashOverlay');
   save(); renderTab();
   toast(`−${moneyTRY(v)} nakit çıkarıldı`);
