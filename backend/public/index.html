@@ -276,6 +276,7 @@
 
 <nav class="tabs" id="tabs">
   <button data-tab="overview" class="active">Genel Bakış</button>
+  <button data-tab="transactions">İşlemler</button>
   <button data-tab="savings">Tasarruf</button>
   <button data-tab="goals">Hedefler</button>
   <button data-tab="projection">Projeksiyon</button>
@@ -320,6 +321,40 @@
 
   <section class="groups" id="groups"></section>
   <div class="addbar" style="display:flex;gap:10px"><button class="btn-ghost" id="openAdd">+ Yatırım ekle</button><button class="btn-ghost" id="openCashBtn">💰 Nakit yönet</button></div>
+</div>
+
+<!-- ============ TRANSACTIONS ============ -->
+<div data-section="transactions" style="display:none">
+  <div class="sec-head" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+    <h3 style="margin:0">İşlemler</h3>
+    <div class="ccy-switch" id="txFilterSide" style="margin-left:6px">
+      <button data-side="all" class="active">Tümü</button>
+      <button data-side="buy">Alımlar</button>
+      <button data-side="sell">Satışlar</button>
+    </div>
+    <input id="txSearchCode" placeholder="kod ara…" style="flex:1;min-width:120px;max-width:200px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:11px;padding:8px 12px;font-family:inherit;font-size:13px">
+    <button class="btn-ghost" id="openTxAdd">+ İşlem ekle</button>
+  </div>
+  <div class="card" style="padding:0">
+    <div class="tbl-wrap">
+      <table id="txTable" style="width:100%">
+        <thead>
+          <tr>
+            <th>Tarih</th>
+            <th>Sembol</th>
+            <th>Tür</th>
+            <th>Yön</th>
+            <th class="num">Adet</th>
+            <th class="num">Fiyat</th>
+            <th class="num">Toplam</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="txTbody"></tbody>
+      </table>
+    </div>
+    <div id="txEmptyState" style="padding:24px;text-align:center;color:var(--muted);font-size:13px;display:none">Henüz işlem yok.</div>
+  </div>
 </div>
 
 <!-- ============ SAVINGS ============ -->
@@ -433,6 +468,10 @@
 <!-- MODALS -->
 <div class="overlay" id="addOverlay"><div class="modal">
   <h2 id="addTitle">Yatırım ekle</h2>
+  <div class="ccy-switch" id="txSideSeg" style="margin-bottom:10px;display:none">
+    <button type="button" data-side="buy" class="active">Alış</button>
+    <button type="button" data-side="sell">Satış</button>
+  </div>
   <div class="ccy-switch" id="fundingSeg" style="margin-bottom:10px">
     <button type="button" data-fund="new" class="active">+ Yeni para</button>
     <button type="button" data-fund="cash">💰 Kasadan <small id="cashBalLabel"></small></button>
@@ -457,10 +496,16 @@
   <div class="modal-actions"><button class="btn-ghost" onclick="closeModal('addOverlay')">Vazgeç</button><button class="btn-primary" id="saveAdd">Kaydet</button></div>
 </div></div>
 
-<div class="overlay" id="sellOverlay"><div class="modal">
-  <h2>Yatırımı sat</h2><div class="mh">Güncel fiyat üzerinden nakit TL'ye çevrilir ve portföye “Nakit” olarak eklenir.</div>
-  <div class="sellbox" id="sellBox"></div>
-  <div class="modal-actions"><button class="btn-ghost" onclick="closeModal('sellOverlay')">Vazgeç</button><button class="btn-primary" id="confirmSell">Sat ve nakde çevir</button></div>
+<div class=”overlay” id=”sellOverlay”><div class=”modal”>
+  <h2>Yatırımı sat</h2>
+  <div class=”mh”>Belirtilen miktarda satış yapılır, nakde ₺ olarak eklenir.</div>
+  <div class=”sellbox” id=”sellBox”></div>
+  <div class=”row2”>
+    <div class=”field”><label>Adet / Miktar</label><input id=”s_qty” type=”number” step=”any”></div>
+    <div class=”field”><label>Satış tarihi</label><input id=”s_date” type=”date”></div>
+  </div>
+  <div class=”field”><label>Satış fiyatı (₺)</label><input id=”s_price” type=”number” step=”any”></div>
+  <div class=”modal-actions”><button class=”btn-ghost” onclick=”closeModal('sellOverlay')”>Vazgeç</button><button class=”btn-primary” id=”confirmSell”>Sat ve nakde çevir</button></div>
 </div></div>
 
 <div class="overlay" id="cashOverlay"><div class="modal">
@@ -481,6 +526,16 @@
   <div class="modal-actions">
     <button class="btn-ghost" onclick="closeModal('cashConfirmOverlay')">Vazgeç</button>
     <button class="btn-primary" id="cashConfirmContinue">Yeni yatırım olarak ekle</button>
+  </div>
+</div></div>
+
+<div class="overlay" id="txDeleteOverlay"><div class="modal">
+  <h2>İşlemi sil</h2>
+  <div class="mh">Bu işlem silinince pozisyon maliyet ve adeti yeniden hesaplanır. Geri alınamaz.</div>
+  <div class="sellbox" id="txDeleteBox"></div>
+  <div class="modal-actions">
+    <button class="btn-ghost" onclick="closeModal('txDeleteOverlay')">Vazgeç</button>
+    <button class="btn-primary" id="txDeleteConfirm" style="background:var(--down);color:#fff">Sil</button>
   </div>
 </div></div>
 
@@ -662,6 +717,129 @@ function recomputeFromTransactions(){
   SALES = result.sales;
 }
 
+/* ===== Module 2: transactions UI ===== */
+let txEditingId = null;
+let txDeletingId = null;
+let txFilterSideVal = 'all';
+let txSearchVal = '';
+let editTxSide = 'buy';
+
+const TYPE_LBL = {fon:"Fon",hisse:"Hisse",etf:"ETF",doviz:"Döviz",altin:"Altın",kripto:"Kripto"};
+
+function renderTransactions(){
+  const tbody = document.getElementById('txTbody');
+  const empty = document.getElementById('txEmptyState');
+  const sortedDesc = TRANSACTIONS.slice().sort((a,b)=> a.date<b.date?1:a.date>b.date?-1:0);
+  const filtered = sortedDesc.filter(tx => {
+    if (txFilterSideVal !== 'all' && tx.side !== txFilterSideVal) return false;
+    if (txSearchVal && !tx.code.toLowerCase().includes(txSearchVal.toLowerCase())) return false;
+    return true;
+  });
+  if (!filtered.length){
+    tbody.innerHTML = '';
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+  tbody.innerHTML = filtered.map(tx => {
+    const sideBadge = tx.side === 'buy'
+      ? '<span class="pendtag" style="background:rgba(52,211,153,.14);color:var(--up);border:none">↑ Alış</span>'
+      : '<span class="pendtag" style="background:rgba(248,113,113,.14);color:var(--down);border:none">↓ Satış</span>';
+    const total = tx.qty * tx.price;
+    return `<tr>
+      <td>${tx.date}</td>
+      <td><div class="asset"><span class="code">${tx.code}</span><span class="nm">${tx.name||''}</span></div></td>
+      <td>${TYPE_LBL[tx.type]||tx.type}</td>
+      <td>${sideBadge}</td>
+      <td class="num">${nf(tx.qty, tx.qty<10?4:0)}</td>
+      <td class="num">${nf(tx.price, tx.price<100?2:0)}</td>
+      <td class="num">${moneyTRY(total)}</td>
+      <td class="actions-td"><button class="rowbtn" data-tx-edit="${tx.id}">Düzenle</button> <button class="rowbtn sell" data-tx-del="${tx.id}">Sil</button></td>
+    </tr>`;
+  }).join('');
+  tbody.querySelectorAll('[data-tx-edit]').forEach(b=> b.onclick = ()=> openTxEdit(b.dataset.txEdit));
+  tbody.querySelectorAll('[data-tx-del]').forEach(b=> b.onclick = ()=> openTxDelete(b.dataset.txDel));
+}
+
+function openTxEdit(tid){
+  const tx = TRANSACTIONS.find(t => t.id === tid);
+  if (!tx) return;
+  txEditingId = tid;
+  editingId = null;            // not editing a holding
+  editTxSide = tx.side;
+  document.getElementById('addTitle').textContent = 'İşlemi düzenle';
+  document.getElementById('f_type').value = tx.type;
+  document.getElementById('f_region').value = tx.region || 'yurtici';
+  document.getElementById('f_code').value = tx.code;
+  document.getElementById('f_name').value = tx.name || '';
+  document.getElementById('f_qty').value = tx.qty;
+  document.getElementById('f_cost').value = tx.price;
+  document.getElementById('f_price').value = '';
+  document.getElementById('f_date').value = tx.date;
+  syncTypeUI();
+  // Show side toggle, hide funding seg + "Güncel fiyat" row
+  document.getElementById('txSideSeg').style.display = '';
+  document.querySelectorAll('#txSideSeg button').forEach(b=> b.classList.toggle('active', b.dataset.side === tx.side));
+  document.getElementById('fundingSeg').style.display = 'none';
+  // Hide the f_price field (not relevant for TX editing)
+  const fPriceField = document.getElementById('f_price').closest('.field') || document.getElementById('f_price').parentElement;
+  if (fPriceField) fPriceField.style.display = 'none';
+  // Relabel f_cost depending on side
+  document.getElementById('f_costlbl').textContent = tx.side === 'buy' ? 'Birim maliyet (₺)' : 'Satış fiyatı (₺)';
+  document.getElementById('addOverlay').classList.add('open');
+}
+
+function openTxDelete(tid){
+  const tx = TRANSACTIONS.find(t => t.id === tid);
+  if (!tx) return;
+  txDeletingId = tid;
+  document.getElementById('txDeleteBox').innerHTML = `<div><b>${tx.code}</b> · ${tx.name||''}</div><div>${tx.date} · ${tx.side==='buy'?'Alış':'Satış'} · ${nf(tx.qty, tx.qty<10?4:0)} adet @ ${nf(tx.price,tx.price<100?2:0)} ₺</div><div>Toplam: <b>${moneyTRY(tx.qty*tx.price)}</b></div>`;
+  document.getElementById('txDeleteOverlay').classList.add('open');
+}
+
+document.getElementById('txDeleteConfirm').onclick = ()=>{
+  if (!txDeletingId) return;
+  TRANSACTIONS = TRANSACTIONS.filter(t => t.id !== txDeletingId);
+  txDeletingId = null;
+  recomputeFromTransactions();
+  closeModal('txDeleteOverlay');
+  save();
+  renderTab();
+  toast('İşlem silindi');
+};
+
+// Side toggle in addOverlay (for TX editing)
+document.querySelectorAll('#txSideSeg button').forEach(b=>{
+  b.onclick = ()=>{
+    document.querySelectorAll('#txSideSeg button').forEach(x=> x.classList.remove('active'));
+    b.classList.add('active');
+    editTxSide = b.dataset.side;
+    document.getElementById('f_costlbl').textContent = editTxSide === 'buy' ? 'Birim maliyet (₺)' : 'Satış fiyatı (₺)';
+  };
+});
+
+// Filter chips
+document.querySelectorAll('#txFilterSide button').forEach(b=>{
+  b.onclick = ()=>{
+    document.querySelectorAll('#txFilterSide button').forEach(x=> x.classList.remove('active'));
+    b.classList.add('active');
+    txFilterSideVal = b.dataset.side;
+    renderTransactions();
+  };
+});
+
+// Search
+document.getElementById('txSearchCode').oninput = (e)=>{
+  txSearchVal = e.target.value.trim();
+  renderTransactions();
+};
+
+// + İşlem ekle reuses Yatırım ekle flow
+document.getElementById('openTxAdd').onclick = ()=>{
+  txEditingId = null;
+  openAdd();
+};
+
 /* ===== portfolio compute ===== */
 function isPending(h){return h.price==null}
 function valTRY(h){return h.qty*(isPending(h)?h.unitCost:h.price)}
@@ -732,7 +910,7 @@ function renderPerf(){const tg=document.getElementById('bmToggle');const opts=[[
 function renderBenchmark(){const ci=currentIndices();if(!ci){document.getElementById('bmRows').innerHTML='<div class="muted" style="font-size:12px">Yatırım ekleyince dolacak.</div>';return;}const rows=[["Senin portföyün",ci.port-100,holdingsValTRY(),"var(--accent)"],["Gram Altın",ci.gold-100,altValueTRY('gold'),"#E8B84B"],["Dolar",ci.usd-100,altValueTRY('usd'),"#FF7A1A"],["BIST 100",ci.bist-100,altValueTRY('bist'),"#3BA0FF"]];const max=Math.max(...rows.map(r=>Math.abs(r[1])),1);document.getElementById('bmRows').innerHTML=rows.map(([n,v,val,c])=>{const half=Math.abs(v)/max*50;const fill=v>=0?`left:50%;width:${half}%;background:${c}`:`right:50%;width:${half}%;background:${c}`;return `<div class="bm-row"><div class="nm"><span class="swatch" style="background:${c}"></span>${n}</div><div class="bar-track"><div class="bar-mid"></div><div class="bar-fill" style="${fill}"></div></div><div class="delta ${cls(v)}">${pct(v)}<small>${moneyTRY(val)}</small></div></div>`;}).join('');}
 function regionLabel(r){return r==='yurtdisi'?'Yurt Dışı':'Yurt İçi'}
 function buildGroups(){const G=[];TYPE_ORDER.forEach(t=>{if(REGIONAL.includes(t)){['yurtici','yurtdisi'].forEach(r=>{const items=HOLDINGS.filter(h=>h.type===t&&(h.region||'yurtici')===r);if(items.length)G.push({key:t+'|'+r,type:t,region:r,items});});}else{const items=HOLDINGS.filter(h=>h.type===t);if(items.length)G.push({key:t,type:t,region:null,items});}});return G;}
-function renderGroups(){const g=document.getElementById('groups');g.innerHTML='';buildGroups().forEach(grp=>{const T=TYPES[grp.type];const gv=grp.items.reduce((s,h)=>s+valTRY(h),0),gc=grp.items.reduce((s,h)=>s+costTRY(h),0);const gp=gc?(gv-gc)/gc*100:0;const rows=grp.items.map(h=>{const pend=isPending(h);const v=valTRY(h),c=costTRY(h),pnl=v-c,pp=c?pnl/c*100:0;const priceCell=pend?`<span class="pendtag">fiyat bekleniyor</span>`:`<span class="num">${nf(h.price,h.price<100?2:0)}</span>`;const dayCell=pend?`<span class="muted">—</span>`:`<span class="num ${cls(h.dayPct)}">${pct(h.dayPct||0)}</span>`;const pnlCell=pend?`<span class="muted">—</span>`:`<span class="num ${pnl>0?'cellpos':pnl<0?'cellneg':''}">${moneyTRY(pnl)}</span>`;const ppCell=pend?`<span class="muted">—</span>`:`<span class="num ${pp>0?'cellpos':pp<0?'cellneg':''}">${pct(pp)}</span>`;return `<tr><td><div class="asset"><span class="code">${h.code}</span><span class="nm">${h.name}</span></div></td><td class="num">${nf(h.qty,h.qty<10?4:0)}</td><td class="num">${nf(h.unitCost,h.unitCost<100?2:0)}</td><td>${priceCell}</td><td>${dayCell}</td><td class="num">${moneyTRY(v)}</td><td>${pnlCell}</td><td>${ppCell}</td><td class="actions-td">${(h.txCount ?? 1) === 1 ? `<button class="rowbtn" data-edit="${h.id}">Düzenle</button>` : ''}<button class="rowbtn sell" data-sell="${h.id}">Sat</button></td></tr>`;}).join('');g.insertAdjacentHTML('beforeend',`<div class="card group" data-k="${grp.key}"><div class="ghead"><div style="width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:13px;background:${T.color}22;color:${T.color}">${T.icon}</div><span class="gname">${T.label}${grp.region?' · '+regionLabel(grp.region):''}</span><span class="cnt">${grp.items.length}</span><div class="gval"><div class="num">${moneyTRY(gv)}</div><div class="gpnl num ${cls(gp)}">${pct(gp)}</div></div><span class="chev">▾</span></div><div class="tbl-wrap"><table><thead><tr><th>Varlık</th><th>Adet</th><th>Maliyet</th><th>Fiyat</th><th>Gün</th><th>Değer</th><th>K/Z</th><th>K/Z %</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`);});if(CASH>0||SALES.length){const ledger=SALES.slice().reverse().map(s=>`<div class="lrow"><span>${s.date} · ${s.code} (${nf(s.qty,s.qty<10?4:0)})</span><span class="num">+${moneyTRY(s.proceeds)} <span class="${cls(s.pnl)}">(${moneyTRY(s.pnl)})</span></span></div>`).join('');g.insertAdjacentHTML('beforeend',`<div class="card group" data-k="cash"><div class="ghead"><div style="width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:13px;background:#5A5A6E22;color:#9b9bae">💰</div><span class="gname">Nakit (TL)</span><span class="cnt">${SALES.length} satış</span><div class="gval"><div class="num cashbal">${moneyTRY(CASH)}</div></div><span class="chev">▾</span></div><div class="tbl-wrap"><div class="ledger">${ledger||'<div style="padding:8px 0">Henüz satış yok.</div>'}</div></div></div>`);}g.querySelectorAll('.ghead').forEach(h=>h.onclick=e=>{if(e.target.closest('.rowbtn'))return;h.parentElement.classList.toggle('collapsed')});g.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEdit(b.dataset.edit));g.querySelectorAll('[data-sell]').forEach(b=>b.onclick=()=>openSell(b.dataset.sell));}
+function renderGroups(){const g=document.getElementById('groups');g.innerHTML='';buildGroups().forEach(grp=>{const T=TYPES[grp.type];const gv=grp.items.reduce((s,h)=>s+valTRY(h),0),gc=grp.items.reduce((s,h)=>s+costTRY(h),0);const gp=gc?(gv-gc)/gc*100:0;const rows=grp.items.map(h=>{const pend=isPending(h);const v=valTRY(h),c=costTRY(h),pnl=v-c,pp=c?pnl/c*100:0;const priceCell=pend?`<span class="pendtag">fiyat bekleniyor</span>`:`<span class="num">${nf(h.price,h.price<100?2:0)}</span>`;const dayCell=pend?`<span class="muted">—</span>`:`<span class="num ${cls(h.dayPct)}">${pct(h.dayPct||0)}</span>`;const pnlCell=pend?`<span class="muted">—</span>`:`<span class="num ${pnl>0?'cellpos':pnl<0?'cellneg':''}">${moneyTRY(pnl)}</span>`;const ppCell=pend?`<span class="muted">—</span>`:`<span class="num ${pp>0?'cellpos':pp<0?'cellneg':''}">${pct(pp)}</span>`;return `<tr><td><div class="asset"><span class="code">${h.code}</span><span class="nm">${h.name}</span></div></td><td class="num">${nf(h.qty,h.qty<10?4:0)}</td><td class="num">${nf(h.unitCost,h.unitCost<100?2:0)}</td><td>${priceCell}</td><td>${dayCell}</td><td class="num">${moneyTRY(v)}</td><td>${pnlCell}</td><td>${ppCell}</td><td class="actions-td">${(h.txCount ?? 1) === 1 ? `<button class="rowbtn" data-edit="${h.id}">Düzenle</button>` : ''}<button class="rowbtn sell" data-sell="${h.id}">Sat</button></td></tr>`;}).join('');g.insertAdjacentHTML('beforeend',`<div class="card group" data-k="${grp.key}"><div class="ghead"><div style="width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:13px;background:${T.color}22;color:${T.color}">${T.icon}</div><span class="gname">${T.label}${grp.region?' · '+regionLabel(grp.region):''}</span><span class="cnt">${grp.items.length}</span><div class="gval"><div class="num">${moneyTRY(gv)}</div><div class="gpnl num ${cls(gp)}">${pct(gp)}</div></div><span class="chev">▾</span></div><div class="tbl-wrap"><table><thead><tr><th>Varlık</th><th>Adet</th><th>Maliyet</th><th>Fiyat</th><th>Gün</th><th>Değer</th><th>K/Z</th><th>K/Z %</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`);});if(CASH>0||SALES.length){const ledger=SALES.slice().reverse().map(s=>`<div class="lrow"><span>${s.date} · ${s.code} (${nf(s.qty,s.qty<10?4:0)})</span><span class="num">+${moneyTRY(s.proceeds)} <span class="${cls(s.pnl)}">(${moneyTRY(s.pnl)})</span></span></div>`).join('');g.insertAdjacentHTML('beforeend',`<div class="card group" data-k="cash"><div class="ghead"><div style="width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:13px;background:#5A5A6E22;color:#9b9bae">💰</div><span class="gname">Nakit (TL) <span class="muted" style="font-size:11px;font-weight:500">· ${state.costMethod === 'wavg' ? 'Ağırlıklı Ortalama' : 'FIFO'} ile hesaplandı</span></span><span class="cnt">${SALES.length} satış</span><div class="gval"><div class="num cashbal">${moneyTRY(CASH)}</div></div><span class="chev">▾</span></div><div class="tbl-wrap"><div class="ledger">${ledger||'<div style="padding:8px 0">Henüz satış yok.</div>'}</div></div></div>`);}g.querySelectorAll('.ghead').forEach(h=>h.onclick=e=>{if(e.target.closest('.rowbtn'))return;h.parentElement.classList.toggle('collapsed')});g.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEdit(b.dataset.edit));g.querySelectorAll('[data-sell]').forEach(b=>b.onclick=()=>openSell(b.dataset.sell));}
 function renderUpdated(){document.getElementById('updatedAt').innerHTML=state.lastUpdate?`Son güncelleme<br><b style="color:var(--text)">${state.lastUpdate}</b>`:`Son güncelleme<br><span class="muted">henüz yok</span>`;}
 function renderOverview(){renderCcy();renderHero();renderReturns();renderAlloc();renderPerf();renderBenchmark();renderGroups();renderUpdated();}
 
@@ -860,7 +1038,7 @@ function renderProjection(){
 
 /* ===== tabs ===== */
 function showTab(t){state.tab=t;document.querySelectorAll('[data-section]').forEach(s=>s.style.display=s.dataset.section===t?'':'none');document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));renderTab();save();}
-function renderTab(){if(state.tab==='overview')renderOverview();else if(state.tab==='savings')renderSavings();else if(state.tab==='goals')renderGoals();else renderProjection();}
+function renderTab(){if(state.tab==='overview')renderOverview();else if(state.tab==='transactions')renderTransactions();else if(state.tab==='savings')renderSavings();else if(state.tab==='goals')renderGoals();else renderProjection();}
 
 /* ===== toast ===== */
 let toastT;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2200);}
@@ -869,7 +1047,7 @@ let toastT;function toast(m){const t=document.getElementById('toast');t.textCont
 let editingId=null;
 function fillTypeSelect(){document.getElementById('f_type').innerHTML=TYPE_ORDER.map(t=>`<option value="${t}">${TYPES[t].label}</option>`).join('')}
 function syncTypeUI(){const t=document.getElementById('f_type').value;document.getElementById('regionField').style.display=REGIONAL.includes(t)?'':'none';const tl={doviz:["Alış kuru (₺)","Güncel kur (₺) — opsiyonel"],altin:["Alış (₺/gr)","Güncel (₺/gr) — opsiyonel"]}[t]||["Birim maliyet (₺)","Güncel fiyat (₺) — opsiyonel"];document.getElementById('f_costlbl').textContent=tl[0];document.getElementById('f_pricelbl').textContent=tl[1];}
-function openAdd(){editingId=null;document.getElementById('addTitle').textContent="Yatırım ekle";['f_code','f_name','f_qty','f_cost','f_price','f_date'].forEach(x=>document.getElementById(x).value='');document.getElementById('f_type').value='hisse';document.getElementById('f_region').value='yurtici';syncTypeUI();fundingMode='new';document.getElementById('fundingSeg').style.display='';document.querySelectorAll('#fundingSeg button').forEach(b=>b.classList.toggle('active',b.dataset.fund==='new'));document.getElementById('cashBalLabel').textContent=`(${moneyTRY(CASH)})`;document.getElementById('addOverlay').classList.add('open');}
+function openAdd(){editingId=null;txEditingId=null;document.getElementById('addTitle').textContent="Yatırım ekle";['f_code','f_name','f_qty','f_cost','f_price','f_date'].forEach(x=>document.getElementById(x).value='');document.getElementById('f_type').value='hisse';document.getElementById('f_region').value='yurtici';syncTypeUI();fundingMode='new';document.getElementById('fundingSeg').style.display='';document.querySelectorAll('#fundingSeg button').forEach(b=>b.classList.toggle('active',b.dataset.fund==='new'));document.getElementById('cashBalLabel').textContent=`(${moneyTRY(CASH)})`;document.getElementById('txSideSeg').style.display='none';const fPriceField=document.getElementById('f_price').closest('.field')||document.getElementById('f_price').parentElement;if(fPriceField)fPriceField.style.display='';document.getElementById('f_costlbl').textContent='Birim maliyet (₺)';document.getElementById('addOverlay').classList.add('open');}
 function openEdit(hid){const h=HOLDINGS.find(x=>x.id===hid);if(!h)return;editingId=hid;document.getElementById('addTitle').textContent="Yatırım düzenle";document.getElementById('f_type').value=h.type;document.getElementById('f_region').value=h.region||'yurtici';document.getElementById('f_code').value=h.code;document.getElementById('f_name').value=h.name;document.getElementById('f_qty').value=h.qty;document.getElementById('f_cost').value=h.unitCost;document.getElementById('f_price').value=isPending(h)?'':h.price;document.getElementById('f_date').value=h.buyDate;syncTypeUI();document.getElementById('fundingSeg').style.display='none';document.getElementById('addOverlay').classList.add('open');}
 function gv(id){return document.getElementById(id).value.trim()}
 function ___finalizeBuy(tx, fromCash) {
@@ -889,6 +1067,25 @@ document.getElementById('saveAdd').onclick = ()=>{
   const price=pr===''?null:+pr;
   const region=REGIONAL.includes(t)?gv('f_region'):null;
   if (!code||!qty||!unitCost){ alert("Kod, adet ve maliyet zorunlu."); return; }
+
+  if (txEditingId) {
+    const tx = TRANSACTIONS.find(x => x.id === txEditingId);
+    if (!tx) { txEditingId = null; closeModal('addOverlay'); return; }
+    Object.assign(tx, {
+      side: editTxSide,
+      type: t, region, code, name,
+      qty, price: unitCost, date: buyDate
+    });
+    // For BUY tx, ensure bmAtCost exists
+    if (tx.side === 'buy' && !tx.bmAtCost) tx.bmAtCost = { ...bmNow() };
+    txEditingId = null;
+    recomputeFromTransactions();
+    closeModal('addOverlay');
+    save();
+    renderTab();
+    toast("İşlem güncellendi");
+    return;
+  }
 
   if (editingId) {
     const h = HOLDINGS.find(x => x.id === editingId);
@@ -938,25 +1135,39 @@ document.getElementById('saveAdd').onclick = ()=>{
 
 /* ===== sell ===== */
 let sellingId=null;
-function openSell(hid){const h=HOLDINGS.find(x=>x.id===hid);if(!h)return;if(isPending(h)){toast("Önce güncel fiyat girin (Güncelle).");return;}sellingId=hid;const proceeds=valTRY(h),cost=costTRY(h),pnl=proceeds-cost,pp=cost?pnl/cost*100:0;document.getElementById('sellBox').innerHTML=`<div><b>${h.code}</b> · ${h.name}</div><div>Miktar: <b>${nf(h.qty,h.qty<10?4:0)}</b> · Fiyat: <b>${nf(h.price,h.price<100?2:0)} ₺</b></div><div>Nakde geçecek tutar: <b>${moneyTRY(proceeds)}</b></div><div>Realize kâr/zarar: <b class="${cls(pp)}">${moneyTRY(pnl)} (${pct(pp)})</b></div>`;document.getElementById('sellOverlay').classList.add('open');}
+function openSell(hid){
+  const h=HOLDINGS.find(x=>x.id===hid);
+  if(!h)return;
+  if(isPending(h)){toast("Önce güncel fiyat girin (Güncelle).");return;}
+  sellingId=hid;
+  document.getElementById('sellBox').innerHTML=`<div><b>${h.code}</b> · ${h.name}</div><div>Mevcut: <b>${nf(h.qty,h.qty<10?4:0)}</b> · Birim maliyet: <b>${nf(h.unitCost,h.unitCost<100?2:0)} ₺</b></div>`;
+  document.getElementById('s_qty').value=h.qty;
+  document.getElementById('s_price').value=h.price;
+  document.getElementById('s_date').value=new Date().toISOString().slice(0,10);
+  document.getElementById('sellOverlay').classList.add('open');
+}
 document.getElementById('confirmSell').onclick=()=>{
   const h = HOLDINGS.find(x => x.id === sellingId);
   if (!h) return;
-  const proceeds = valTRY(h);
+  const qty = +document.getElementById('s_qty').value;
+  const price = +document.getElementById('s_price').value;
+  const date = document.getElementById('s_date').value || new Date().toISOString().slice(0,10);
+  if (!(qty > 0)) { toast("Miktar > 0 olmalı"); return; }
+  if (qty > h.qty + 1e-9) { toast(`Mevcut ${nf(h.qty,h.qty<10?4:0)}, fazlasını satamazsın`); return; }
+  if (!(price > 0)) { toast("Fiyat > 0 olmalı"); return; }
   const sellTx = {
-    id: id(),
-    date: new Date().toISOString().slice(0,10),
+    id: id(), date,
     side: "sell",
     type: h.type, region: h.region, code: h.code, name: h.name,
-    qty: h.qty, price: h.price
+    qty, price
   };
   TRANSACTIONS.push(sellTx);
-  CASH += proceeds;
+  CASH += qty * price;
   recomputeFromTransactions();
   closeModal('sellOverlay');
   save();
   renderTab();
-  toast(`${h.code} satıldı · ${moneyTRY(proceeds)} nakde eklendi`);
+  toast(`${h.code} · ${nf(qty,qty<10?4:0)} adet satıldı · ${moneyTRY(qty*price)} nakde eklendi`);
 };
 
 /* ===== update ===== */
