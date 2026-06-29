@@ -360,10 +360,35 @@
 
 <!-- ============ SAVINGS ============ -->
 <div data-section="history" style="display:none">
-  <div class="sec-head" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-    <h3 style="margin:0">Günlük Geçmiş</h3>
-    <span class="muted" style="font-size:12px">Her gün sonu portföy değeri + dışarıdan giren/çıkan nakit akışı. Günlük % nakit akışından arındırılmıştır.</span>
+  <div class="card" style="padding:18px;margin-bottom:14px">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+      <div>
+        <h3 style="margin:0">Performans Analizi</h3>
+        <div class="muted" style="font-size:12px">Nakit akışından arındırılmış zaman ağırlıklı getiri (TWR)</div>
+      </div>
+      <div style="font-size:13px;color:var(--muted)">Dönem getirisi: <b id="historyPeriodReturn" style="font-size:18px;color:var(--text)">—</b></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+      <div class="ccy-switch" id="historyRangeSeg">
+        <button data-mode="1w">1H</button>
+        <button data-mode="1m" class="active">1A</button>
+        <button data-mode="3m">3A</button>
+        <button data-mode="6m">6A</button>
+        <button data-mode="1y">1Y</button>
+        <button data-mode="all">Tümü</button>
+      </div>
+      <span class="muted" style="font-size:11.5px;margin-left:6px">Özel:</span>
+      <input id="hRangeStart" type="date" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:12px;font-family:inherit">
+      <span class="muted">→</span>
+      <input id="hRangeEnd" type="date" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:12px;font-family:inherit">
+    </div>
+    <div id="historyChartArea" class="chart-wrap"><canvas id="historyChart"></canvas></div>
   </div>
+
+  <h3 style="margin:18px 0 10px 4px;font-size:14px;color:var(--muted);font-weight:600">Periyot Getirileri</h3>
+  <div id="historyCards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:22px"></div>
+
+  <h3 style="margin:18px 0 10px 4px;font-size:14px;color:var(--muted);font-weight:600">Günlük Geçmiş</h3>
   <div class="card" style="padding:0">
     <div class="tbl-wrap">
       <table id="historyTable" style="width:100%">
@@ -1115,22 +1140,127 @@ function ___snapshotTodayValue(){
   e.value = totalValTRY();
 }
 
-function renderHistory(){
+/* ===== Performance analysis (M4) ===== */
+let historyChart;
+let historyRangeMode = '1m';
+
+function ___historyAsc(){ return DAILY_HISTORY.slice().sort((a,b)=> a.date<b.date?-1:1); }
+
+function ___twrForRange(entries){
+  // entries sorted asc; computes chain-linked TWR (cash flow neutralized per day)
+  if (entries.length < 2) return null;
+  let twr = 1;
+  let hasValid = false;
+  for (let i = 1; i < entries.length; i++){
+    const prev = entries[i-1];
+    const curr = entries[i];
+    if (prev.value > 0){
+      const r = (curr.value - (curr.cashFlow || 0)) / prev.value - 1;
+      twr *= (1 + r);
+      hasValid = true;
+    }
+  }
+  return hasValid ? (twr - 1) * 100 : null;
+}
+
+function ___rangeStartISO(mode){
+  const today = new Date();
+  const ms = 24 * 3600 * 1000;
+  if (mode === '1w')  return new Date(today.getTime() - 7  * ms).toISOString().slice(0,10);
+  if (mode === '1m')  return new Date(today.getTime() - 30 * ms).toISOString().slice(0,10);
+  if (mode === '3m')  return new Date(today.getTime() - 90 * ms).toISOString().slice(0,10);
+  if (mode === '6m')  return new Date(today.getTime() - 180* ms).toISOString().slice(0,10);
+  if (mode === '1y')  return new Date(today.getTime() - 365* ms).toISOString().slice(0,10);
+  if (mode === 'mtd') return new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0,10);
+  return null; // all / custom
+}
+
+function ___filterByMode(entriesAsc, mode, customStart, customEnd){
+  if (mode === 'custom'){
+    return entriesAsc.filter(e =>
+      (!customStart || e.date >= customStart) &&
+      (!customEnd   || e.date <= customEnd)
+    );
+  }
+  if (mode === 'all') return entriesAsc;
+  const startISO = ___rangeStartISO(mode);
+  if (!startISO) return entriesAsc;
+  return entriesAsc.filter(e => e.date >= startISO);
+}
+
+function ___renderHistoryChart(filtered){
+  const area = document.getElementById('historyChartArea');
+  if (historyChart) { historyChart.destroy(); historyChart = null; }
+  if (filtered.length < 2){
+    area.innerHTML = '<div class="empty" style="padding:30px;text-align:center;color:var(--muted);font-size:13px">Bu aralıkta yeterli veri yok.</div>';
+    return;
+  }
+  area.innerHTML = '<canvas id="historyChart"></canvas>';
+  const labels = filtered.map(e => { const [y,m,d] = e.date.split('-'); return `${d}.${m}`; });
+  const data = filtered.map(e => e.value);
+  historyChart = new Chart(document.getElementById('historyChart'), {
+    type:'line',
+    data:{ labels, datasets:[{
+      label:'Değer',
+      data,
+      borderColor:'#FF7A1A',
+      backgroundColor:'rgba(255,122,26,.10)',
+      borderWidth:2.4,
+      fill:true, tension:.25, pointRadius:0
+    }]},
+    options:{
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{ label: c => ` ${moneyTRY(c.parsed.y)}` }}
+      },
+      scales:{
+        x:{ ticks:{color:'#5A5A6E',maxTicksLimit:6,font:{size:10}}, grid:{display:false} },
+        y:{ ticks:{color:'#5A5A6E',font:{size:10},callback: v => moneyTRY(v)}, grid:{color:'rgba(255,255,255,.04)'} }
+      },
+      animation:{duration:450},
+      interaction:{mode:'index',intersect:false}
+    }
+  });
+}
+
+function ___renderHistoryCards(ascAll){
+  const periods = [
+    {label:'1 Hafta', mode:'1w'},
+    {label:'Bu Ay',   mode:'mtd'},
+    {label:'1 Ay',    mode:'1m'},
+    {label:'3 Ay',    mode:'3m'},
+    {label:'6 Ay',    mode:'6m'},
+    {label:'1 Yıl',   mode:'1y'},
+    {label:'Tümü',    mode:'all'},
+  ];
+  const html = periods.map(p => {
+    const sub = ___filterByMode(ascAll, p.mode);
+    const twr = ___twrForRange(sub);
+    const display = twr === null
+      ? `<span class="muted">N/A</span>`
+      : `<span class="${cls(twr)}">${pct(twr)}</span>`;
+    return `<div class="card" style="padding:12px 14px;text-align:center">
+      <div class="muted" style="font-size:11px;margin-bottom:4px;font-weight:600;letter-spacing:.02em">${p.label}</div>
+      <div class="num" style="font-size:16px;font-weight:600">${display}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('historyCards').innerHTML = html;
+}
+
+function ___renderHistoryTable(sortedDesc){
   const tbody = document.getElementById('historyTbody');
   const empty = document.getElementById('historyEmptyState');
-  if (!DAILY_HISTORY.length){
+  if (!sortedDesc.length){
     tbody.innerHTML = '';
     empty.style.display = '';
     return;
   }
   empty.style.display = 'none';
-  // newest first
-  const sortedDesc = DAILY_HISTORY.slice().sort((a,b)=> a.date<b.date?1:a.date>b.date?-1:0);
   tbody.innerHTML = sortedDesc.map((e, i) => {
-    const prev = sortedDesc[i+1];   // older row
+    const prev = sortedDesc[i+1];
     let dailyRet = null;
     if (prev && prev.value > 0){
-      dailyRet = ((e.value - e.cashFlow) / prev.value - 1) * 100;
+      dailyRet = ((e.value - (e.cashFlow || 0)) / prev.value - 1) * 100;
     }
     const pctStr = dailyRet === null ? '<span class="muted">—</span>'
                  : `<span class="${cls(dailyRet)}">${pct(dailyRet)}</span>`;
@@ -1144,6 +1274,22 @@ function renderHistory(){
       <td class="num">${pctStr}</td>
     </tr>`;
   }).join('');
+}
+
+function renderHistory(){
+  const ascAll = ___historyAsc();
+  const customStart = document.getElementById('hRangeStart').value;
+  const customEnd   = document.getElementById('hRangeEnd').value;
+  const filtered = ___filterByMode(ascAll, historyRangeMode, customStart, customEnd);
+  const periodTwr = ___twrForRange(filtered);
+  document.getElementById('historyPeriodReturn').innerHTML =
+    periodTwr === null
+      ? '<span class="muted" style="font-size:14px">—</span>'
+      : `<span class="${cls(periodTwr)}">${pct(periodTwr)}</span>`;
+  ___renderHistoryChart(filtered);
+  ___renderHistoryCards(ascAll);
+  const sortedDesc = ascAll.slice().reverse();
+  ___renderHistoryTable(sortedDesc);
 }
 let pendingTx = null;
 document.getElementById('saveAdd').onclick = ()=>{
@@ -1496,6 +1642,25 @@ __costSel.onchange = ()=>{
   renderTab();
   toast(`Maliyet yöntemi: ${__costSel.value === "fifo" ? "FIFO" : "Ağırlıklı Ortalama"}`);
 };
+
+/* ===== History range wiring (M4) ===== */
+document.querySelectorAll('#historyRangeSeg button').forEach(b=>{
+  b.onclick = ()=>{
+    document.querySelectorAll('#historyRangeSeg button').forEach(x=> x.classList.remove('active'));
+    b.classList.add('active');
+    historyRangeMode = b.dataset.mode;
+    document.getElementById('hRangeStart').value = '';
+    document.getElementById('hRangeEnd').value = '';
+    if (state.tab === 'history') renderHistory();
+  };
+});
+['hRangeStart','hRangeEnd'].forEach(id=>{
+  document.getElementById(id).onchange = ()=>{
+    historyRangeMode = 'custom';
+    document.querySelectorAll('#historyRangeSeg button').forEach(x=> x.classList.remove('active'));
+    if (state.tab === 'history') renderHistory();
+  };
+});
 
 fillTypeSelect();
 boot();
