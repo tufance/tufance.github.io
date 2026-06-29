@@ -766,6 +766,30 @@ function recomputeFromTransactions(){
   const oldByKey = new Map(HOLDINGS.map(h => [`${h.type}-${h.code}-${h.region || ""}`, h.price]));
   HOLDINGS = result.positions.map(p => ({ ...p, price: oldByKey.get(p.id) ?? null }));
   SALES = result.sales;
+  syncContribFromTransactions();
+}
+
+/* ===== M5: TX → CONTRIB auto-sync ===== */
+function syncContribFromTransactions(){
+  // Drop previously auto-generated rows; leave manual ones intact
+  CONTRIB = CONTRIB.filter(c => !c.auto);
+  for (const tx of TRANSACTIONS){
+    if (tx.side !== 'buy') continue;
+    if (tx.fromCash) continue; // internal reallocation, not fresh money
+    const totalTRY = tx.qty * tx.price;
+    const rateUSD = (tx.bmAtCost && tx.bmAtCost.usd) || RATES.usdtry || 1;
+    const amount = totalTRY / rateUSD;
+    CONTRIB.push({
+      id: 'auto-' + tx.id,
+      txId: tx.id,
+      ym: tx.date.slice(0,7),
+      date: tx.date,
+      amount,
+      ccy: 'USD',
+      note: `${tx.code} ${tx.type} alımı (otomatik)`,
+      auto: true
+    });
+  }
 }
 
 /* ===== Module 2: transactions UI ===== */
@@ -1012,10 +1036,23 @@ function renderSavings(){
   if(savCumChart)savCumChart.destroy();
   savCumChart=new Chart(document.getElementById('savCumChart'),{type:'line',data:{labels,datasets:[{label:'Kümülatif',data:cumData2,borderColor:'#7C5CFF',backgroundColor:'rgba(124,92,255,.12)',borderWidth:2.2,fill:true,tension:.25,pointRadius:0}]},options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${moneyG(c.parsed.y)}`}}},scales:{x:{ticks:{color:'#5A5A6E',font:{size:10}},grid:{display:false}},y:{ticks:{color:'#5A5A6E',font:{size:10}},grid:{color:'rgba(255,255,255,.04)'}}},animation:{duration:450}}});
   // contrib table
-  const rows=CONTRIB.slice().sort((a,b)=>b.ym.localeCompare(a.ym)).map(c=>{const d=new Date(c.ym+'-01');const ml=d.toLocaleDateString('tr-TR',{month:'long',year:'numeric'});return `<tr><td>${ml}</td><td class="num">${nf(c.amount,2)} ${c.ccy}</td><td class="num muted">${moneyG(contribG(c))}</td><td style="text-align:left;color:var(--muted)">${c.note||'—'}</td><td class="actions-td"><button class="rowbtn" data-cedit="${c.id}">Düzenle</button><button class="rowbtn danger" data-cdel="${c.id}">Sil</button></td></tr>`;}).join('');
-  document.getElementById('contribTable').innerHTML=`<thead><tr><th>Ay</th><th>Tutar</th><th>${state.gccy} karşılığı</th><th style="text-align:left">Açıklama</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="5" style="text-align:center;color:var(--faint);padding:18px">Henüz katkı yok.</td></tr>'}</tbody>`;
+  const rows=CONTRIB.slice().sort((a,b)=>{
+    const ka = (a.date || a.ym + '-01');
+    const kb = (b.date || b.ym + '-01');
+    return ka < kb ? 1 : ka > kb ? -1 : 0;
+  }).map(c=>{
+    const d = new Date((c.date || c.ym + '-01'));
+    const ml = c.date
+      ? d.toLocaleDateString('tr-TR',{day:'2-digit',month:'short',year:'numeric'})
+      : d.toLocaleDateString('tr-TR',{month:'long',year:'numeric'});
+    const actions = c.auto
+      ? `<span class="pendtag" style="background:rgba(124,92,255,.14);color:var(--violet);border:none">Otomatik</span>`
+      : `<button class="rowbtn" data-cedit="${c.id}">Düzenle</button><button class="rowbtn danger" data-cdel="${c.id}">Sil</button>`;
+    return `<tr><td>${ml}</td><td class="num">${nf(c.amount,2)} ${c.ccy}</td><td class="num muted">${moneyG(contribG(c))}</td><td style="text-align:left;color:var(--muted)">${c.note||'—'}</td><td class="actions-td">${actions}</td></tr>`;
+  }).join('');
+  document.getElementById('contribTable').innerHTML=`<thead><tr><th>Tarih</th><th>Tutar</th><th>${state.gccy} karşılığı</th><th style="text-align:left">Açıklama</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="5" style="text-align:center;color:var(--faint);padding:18px">Henüz katkı yok.</td></tr>'}</tbody>`;
   document.querySelectorAll('[data-cedit]').forEach(b=>b.onclick=()=>openContrib(b.dataset.cedit));
-  document.querySelectorAll('[data-cdel]').forEach(b=>b.onclick=()=>{CONTRIB=CONTRIB.filter(x=>x.id!==b.dataset.cdel);save();renderSavings();toast("Katkı silindi");});
+  document.querySelectorAll('[data-cdel]').forEach(b=>b.onclick=()=>{const c=CONTRIB.find(x=>x.id===b.dataset.cdel);if(c&&c.auto){toast("Otomatik katkı silinemez — işlemler sekmesinden TX'i sil.");return;}CONTRIB=CONTRIB.filter(x=>x.id!==b.dataset.cdel);save();renderSavings();toast("Katkı silindi");});
 }
 
 /* ===== GOALS render ===== */
